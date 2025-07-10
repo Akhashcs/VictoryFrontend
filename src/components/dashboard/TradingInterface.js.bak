@@ -1,0 +1,848 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  TrendingUp, 
+  Download, 
+  Play, 
+  Square,
+  ChevronsRight,
+  RefreshCw,
+  Zap,
+  ShieldCheck,
+  Repeat,
+  Info
+} from 'lucide-react';
+
+import { HMAService } from '../../services/hmaService';
+import { MarketDataService } from '../../services/marketDataService';
+import TradeService from '../../services/tradeService';
+import api from '../../services/api';
+import { Switch } from '@headlessui/react';
+import BackendMonitoringService from '../../services/backendMonitoringService';
+
+const INDEX_CONFIGS = {
+  NIFTY: { name: 'NIFTY', lotSize: 75, defaultTarget: 40, defaultStopLoss: 7 },
+  BANKNIFTY: { name: 'BANKNIFTY', lotSize: 35, defaultTarget: 60, defaultStopLoss: 15 },
+  SENSEX: { name: 'SENSEX', lotSize: 20, defaultTarget: 80, defaultStopLoss: 20 }
+};
+
+const TradingService = {
+  getLiveDataForMonitoring: async () => {
+    try {
+      // Get the current symbols being monitored from backend
+      const state = await TradeService.loadTradingState();
+      const monitoredSymbols = state?.monitoredSymbols || [];
+      
+      if (monitoredSymbols.length === 0) {
+        return { ceData: null, peData: null };
+      }
+      
+      // Extract CE and PE symbols
+      const ceSymbols = monitoredSymbols.filter(s => s.type === 'CE').map(s => s.symbol);
+      const peSymbols = monitoredSymbols.filter(s => s.type === 'PE').map(s => s.symbol);
+      
+      // Fetch live data for all symbols
+      const allSymbols = [...ceSymbols, ...peSymbols].filter(Boolean);
+      
+      if (allSymbols.length === 0) {
+        return { ceData: null, peData: null };
+      }
+      
+      console.log('🔄 Fetching live data for symbols:', allSymbols);
+      
+      const response = await api.post('/market/quotes', { symbols: allSymbols });
+      const liveData = response.data.data || [];
+      
+      console.log('✅ Received live data:', liveData);
+      
+      // Update the monitored symbols with the latest LTP
+      const updatedSymbols = monitoredSymbols.map(symbol => {
+        const matchingData = liveData.find(data => data.symbol === symbol.symbol);
+        if (matchingData) {
+          return {
+            ...symbol,
+            currentLTP: matchingData.ltp,
+            lastUpdate: new Date()
+          };
+        }
+        return symbol;
+      });
+      
+      // Save the updated data back to backend
+      await TradeService.saveTradingState({ ...state, monitoredSymbols: updatedSymbols });
+      
+      return {
+        ceData: updatedSymbols.find(s => s.type === 'CE'),
+        peData: updatedSymbols.find(s => s.type === 'PE')
+      };
+    } catch (error) {
+      console.error('❌ Error fetching live market data:', error);
+      return { ceData: null, peData: null };
+    }
+  }
+};
+
+// Mock StrategyMonitoringCard component
+const StrategyMonitoringCard = ({ title, symbol, hmaConfig, quantity, targetPoints, stopLossPoints, isMonitoring, onTradeLog, liveData }) => {
+  return (
+    <div className="bg-slate-800 rounded-2xl shadow-sm border border-slate-700 p-6">
+      <h4 className="text-lg font-semibold text-white mb-4">{title}</h4>
+      <div className="space-y-3">
+        <div className="flex justify-between">
+          <span className="text-slate-400">Symbol:</span>
+          <span className="text-white font-medium">{symbol || '--'}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">HMA:</span>
+          <span className="text-white font-medium">
+            {hmaConfig?.hmaValue ? `₹${hmaConfig.hmaValue.toFixed(2)}` : '--'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">Quantity:</span>
+          <span className="text-white font-medium">{quantity}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">Target:</span>
+          <span className="text-green-400 font-medium">+{targetPoints} pts</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">Stop Loss:</span>
+          <span className="text-red-400 font-medium">-{stopLossPoints} pts</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">Status:</span>
+          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+            isMonitoring ? 'text-green-400 bg-green-900/20 border border-green-700/30' : 'text-slate-400 bg-slate-700/50'
+          }`}>
+            {isMonitoring ? 'MONITORING' : 'IDLE'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatusUpdate, onTradeLog, indicesData = [], onMonitoringUpdate }) => {
+  const [inputs, setInputs] = useState({
+    index: INDEX_CONFIGS.NIFTY,
+    ceSymbol: '',
+    peSymbol: '',
+    ceLots: 1,
+    peLots: 1,
+    targetPoints: INDEX_CONFIGS.NIFTY.defaultTarget,
+    stopLossPoints: INDEX_CONFIGS.NIFTY.defaultStopLoss,
+    productType: 'INTRADAY',
+    orderType: 'MARKET',
+    trailSlToCost: false,
+    maxReEntries: 1,
+    startTime: '09:15',
+    endTime: '15:15',
+    useTrailingStoploss: false,
+    trailingX: 20,
+    trailingY: 15,
+    offlineOrder: false,
+    tradeAction: 'BUY'
+  });
+
+  const [strikeSymbols, setStrikeSymbols] = useState({ ce: [], pe: [] });
+  const [ceHMA, setCeHMA] = useState(null);
+  const [peHMA, setPeHMA] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [ceDepth, setCeDepth] = useState(null);
+  const [peDepth, setPeDepth] = useState(null);
+
+  // Add a ref to track the market depth polling interval
+  const marketDepthIntervalRef = useRef(null);
+  
+  // Add cleanup for the interval when component unmounts
+  useEffect(() => {
+    return () => {
+      if (marketDepthIntervalRef.current) {
+        clearInterval(marketDepthIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const generateSymbolsForIndex = async () => {
+    setIsLoading(true);
+    setMessage(null);
+    
+    console.log('[TradingInterface] generateSymbolsForIndex called with:', inputs.index.name);
+    console.log('[TradingInterface] indicesData:', indicesData);
+    
+    const indexData = indicesData.find(data => data.indexName === inputs.index.name);
+    console.log('[TradingInterface] found indexData:', indexData);
+    
+    if (!indexData || !indexData.spotData) {
+      console.log('[TradingInterface] No indexData or spotData found, returning');
+      setMessage({ type: 'error', text: 'No market data available for the selected index.' });
+      setIsLoading(false);
+      return;
+    }
+    
+    const ltp = indexData.spotData.ltp;
+    console.log('[TradingInterface] Using LTP:', ltp);
+    
+    try {
+      // Use backend symbol service to get proper Fyers format symbols
+      const response = await api.get(`/market/symbols/${inputs.index.name}`, {
+        params: { spotPrice: ltp }
+      });
+      const symbols = response.data.data;
+      console.log('[TradingInterface] Generated symbols from backend:', symbols);
+      setStrikeSymbols(symbols);
+      setMessage({ type: 'success', text: `Symbols generated successfully using LTP: ${ltp}` });
+    } catch (error) {
+      console.error('[TradingInterface] Error generating symbols:', error);
+      setMessage({ type: 'error', text: 'Failed to generate symbols. Please try again.' });
+      setStrikeSymbols({ ce: [], pe: [] });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    setInputs(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleIndexChange = (indexKey) => {
+    setInputs(prev => ({
+      ...prev,
+      index: INDEX_CONFIGS[indexKey],
+      ceSymbol: '',
+      peSymbol: '',
+      targetPoints: INDEX_CONFIGS[indexKey].defaultTarget,
+      stopLossPoints: INDEX_CONFIGS[indexKey].defaultStopLoss
+    }));
+    setCeHMA(null);
+    setPeHMA(null);
+  };
+
+  const getQuantityForLots = (type) => {
+    const lots = type === 'ce' ? inputs.ceLots : inputs.peLots;
+    return (inputs.index.lotSize || 0) * lots;
+  };
+
+  // Modify getDetails to start streaming market depth
+  const getDetails = async () => {
+    if (!inputs.ceSymbol && !inputs.peSymbol) {
+      setMessage({ type: 'error', text: 'Please select at least one contract.' });
+      return;
+    }
+    setIsLoading(true);
+    setMessage(null);
+    
+    // Clear any existing interval
+    if (marketDepthIntervalRef.current) {
+      clearInterval(marketDepthIntervalRef.current);
+    }
+    
+    try {
+      // Fetch HMA
+      const [ceData, peData] = await Promise.all([
+        inputs.ceSymbol ? HMAService.fetchAndCalculateHMA(inputs.ceSymbol) : Promise.resolve(null),
+        inputs.peSymbol ? HMAService.fetchAndCalculateHMA(inputs.peSymbol) : Promise.resolve(null)
+      ]);
+      setCeHMA(ceData?.hmaValue || null);
+      setPeHMA(peData?.hmaValue || null);
+      
+      // Fetch initial market depth
+      await fetchMarketDepth();
+      
+      // Set up interval to fetch market depth every 2 seconds
+      marketDepthIntervalRef.current = setInterval(fetchMarketDepth, 2000);
+      
+    } catch (error) {
+      // Handle Fyers token expiration specifically
+      if (error.isFyersTokenExpired) {
+        setMessage({ 
+          type: 'error', 
+          text: 'Your Fyers session has expired. Please refresh your session to continue.' 
+        });
+        // The global handler will show the modal
+        return;
+      }
+      
+      // Handle other errors
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to fetch details.';
+      setMessage({ type: 'error', text: errorMessage });
+      console.error('Error fetching details:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Add a new function to fetch market depth
+  const fetchMarketDepth = async () => {
+    try {
+      // The symbols from the backend are already in Fyers format, so we can use them directly
+      const fyersSymbols = [inputs.ceSymbol, inputs.peSymbol].filter(Boolean);
+      
+      if (fyersSymbols.length > 0) {
+        // Fetch market depth from backend using Fyers symbols
+        const response = await api.post('/fyers/market-depth', {
+          symbols: fyersSymbols
+        });
+        const data = response.data?.depth || {};
+        
+        // Map the response back to frontend symbols
+        const ceFyersSymbol = fyersSymbols.find(s => s.includes('CE'));
+        const peFyersSymbol = fyersSymbols.find(s => s.includes('PE'));
+        
+        setCeDepth(ceFyersSymbol ? data[ceFyersSymbol] || null : null);
+        setPeDepth(peFyersSymbol ? data[peFyersSymbol] || null : null);
+      }
+    } catch (error) {
+      console.error('Error fetching market depth:', error);
+      // Don't show an error message for background updates
+    }
+  };
+  
+  // Add cleanup of market depth interval when symbols change
+  useEffect(() => {
+    // Stop streaming when symbols change
+    if (marketDepthIntervalRef.current) {
+      clearInterval(marketDepthIntervalRef.current);
+      marketDepthIntervalRef.current = null;
+    }
+    
+    // Clear market depth data when symbols change
+    setCeDepth(null);
+    setPeDepth(null);
+  }, [inputs.ceSymbol, inputs.peSymbol]);
+  
+  // Add cleanup of market depth interval when monitoring starts
+  useEffect(() => {
+    if (isMonitoring && marketDepthIntervalRef.current) {
+      clearInterval(marketDepthIntervalRef.current);
+      marketDepthIntervalRef.current = null;
+    }
+  }, [isMonitoring]);
+
+  const handleStartMonitoring = async () => {
+    // Validation
+    if (!inputs.ceSymbol && !inputs.peSymbol) {
+      setMessage({ type: 'error', text: 'Please select at least one contract.' });
+      return;
+    }
+    if ((inputs.ceSymbol && !ceHMA) || (inputs.peSymbol && !peHMA)) {
+      setMessage({ type: 'error', text: 'Please fetch HMA for the selected contract(s) before starting monitoring.' });
+      return;
+    }
+
+    // Check if already being monitored
+    const state = await TradeService.loadTradingState();
+    const monitored = state?.monitoredSymbols || [];
+    if (inputs.ceSymbol) {
+      const ceExists = monitored.some(s => s.symbol === inputs.ceSymbol && s.type === 'CE');
+      if (ceExists) {
+        setMessage({ type: 'warning', text: `CE symbol ${inputs.ceSymbol} is already being monitored.` });
+        return;
+      }
+    }
+    if (inputs.peSymbol) {
+      const peExists = monitored.some(s => s.symbol === inputs.peSymbol && s.type === 'PE');
+      if (peExists) {
+        setMessage({ type: 'warning', text: `PE symbol ${inputs.peSymbol} is already being monitored.` });
+        return;
+      }
+    }
+
+    setIsMonitoring(true);
+    setMessage(null);
+
+    try {
+      // Start monitoring first
+      const monitoringStarted = await BackendMonitoringService.startMonitoring();
+      if (!monitoringStarted) {
+        throw new Error('Failed to start monitoring');
+      }
+
+      // Add symbols to monitoring
+      const monitoringPromises = [];
+      
+      if (inputs.ceSymbol) {
+        monitoringPromises.push(
+          BackendMonitoringService.addSymbol({
+            symbol: inputs.ceSymbol,
+            type: 'CE',
+            index: inputs.index.name,
+            lots: parseInt(inputs.ceLots) || 1,
+            quantity: getQuantityForLots('ce'),
+            targetPoints: parseInt(inputs.targetPoints) || 0,
+            stopLossPoints: parseInt(inputs.stopLossPoints) || 0,
+            tradingMode: 'LIVE',
+            productType: inputs.productType,
+            orderType: inputs.orderType,
+            autoExitOnStopLoss: true,
+            trailingStopLoss: inputs.trailSlToCost,
+            trailingStopLossOffset: 0,
+            useTrailingStoploss: inputs.useTrailingStoploss,
+            trailingX: parseInt(inputs.trailingX) || 20,
+            trailingY: parseInt(inputs.trailingY) || 15,
+            startTime: inputs.startTime,
+            endTime: inputs.endTime,
+            offlineOrder: inputs.offlineOrder,
+            tradeAction: inputs.tradeAction,
+            hmaValue: ceHMA
+          })
+        );
+      }
+      
+      if (inputs.peSymbol) {
+        monitoringPromises.push(
+          BackendMonitoringService.addSymbol({
+            symbol: inputs.peSymbol,
+            type: 'PE',
+            index: inputs.index.name,
+            lots: parseInt(inputs.peLots) || 1,
+            quantity: getQuantityForLots('pe'),
+            targetPoints: parseInt(inputs.targetPoints) || 0,
+            stopLossPoints: parseInt(inputs.stopLossPoints) || 0,
+            tradingMode: 'LIVE',
+            productType: inputs.productType,
+            orderType: inputs.orderType,
+            autoExitOnStopLoss: true,
+            trailingStopLoss: inputs.trailSlToCost,
+            trailingStopLossOffset: 0,
+            useTrailingStoploss: inputs.useTrailingStoploss,
+            trailingX: parseInt(inputs.trailingX) || 20,
+            trailingY: parseInt(inputs.trailingY) || 15,
+            startTime: inputs.startTime,
+            endTime: inputs.endTime,
+            offlineOrder: inputs.offlineOrder,
+            tradeAction: inputs.tradeAction,
+            hmaValue: peHMA
+          })
+        );
+      }
+      
+      await Promise.all(monitoringPromises);
+      
+      // Update header status
+      onStatusUpdate({ monitoringStatus: 'ACTIVE' });
+      
+      // Notify parent component about monitoring update
+      if (onMonitoringUpdate) {
+        onMonitoringUpdate();
+      }
+      
+      setMessage({ type: 'success', text: 'Monitoring started successfully!' });
+    } catch (error) {
+      setIsMonitoring(false);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to start monitoring.';
+      setMessage({ type: 'error', text: errorMessage });
+      console.error('Error starting monitoring:', error);
+    }
+  };
+
+  return (
+    <div className="w-full">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Strategy Card - 2/3 width */}
+        <div className="xl:col-span-2">
+          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 shadow-md p-4 sm:p-6">
+            {/* Form Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+              <h2 className="text-lg sm:text-xl font-semibold text-white">Trading Strategy Setup</h2>
+              
+              {/* Replace Paper/Live trading with Start/End Time */}
+              <div className="flex items-center space-x-4 mt-2 sm:mt-0">
+                <div className="flex items-center">
+                  <label htmlFor="start-time" className="text-sm font-medium text-slate-400 mr-2">Start:</label>
+                  <input
+                    type="time"
+                    id="start-time"
+                    name="startTime"
+                    value={inputs.startTime}
+                    onChange={(e) => handleInputChange('startTime', e.target.value)}
+                    className="bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm py-1 px-2 w-24"
+                  />
+                </div>
+                <div className="flex items-center">
+                  <label htmlFor="end-time" className="text-sm font-medium text-slate-400 mr-2">End:</label>
+                  <input
+                    type="time"
+                    id="end-time"
+                    name="endTime"
+                    value={inputs.endTime}
+                    onChange={(e) => handleInputChange('endTime', e.target.value)}
+                    className="bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm py-1 px-2 w-24"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Strategy Form */}
+            <div className="space-y-6">
+              {/* Message display */}
+              {message && (
+                <div className={`p-3 rounded-md ${
+                  message.type === 'error' ? 'bg-red-900/30 text-red-300 border border-red-800/50' :
+                  message.type === 'warning' ? 'bg-yellow-900/30 text-yellow-300 border border-yellow-800/50' :
+                  'bg-green-900/30 text-green-300 border border-green-800/50'
+                }`}>
+                  {message.text}
+                </div>
+              )}
+              
+              <div className="space-y-6">
+                {/* Row 1: Index Selection (50%) & Get Symbols button (25%) */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="col-span-2">
+                    <label htmlFor="index-select" className="text-sm font-medium text-slate-400">Index</label>
+                    <select
+                      id="index-select"
+                      name="indexSelect"
+                      value={inputs.index.name}
+                      onChange={(e) => handleIndexChange(e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      <option value="NIFTY">NIFTY</option>
+                      <option value="BANKNIFTY">BANKNIFTY</option>
+                      <option value="SENSEX">SENSEX</option>
+                    </select>
+                  </div>
+                  <div className="col-span-1">
+                    <label className="text-sm font-medium text-slate-400 block opacity-0">Get Symbols</label>
+                    <button
+                      onClick={generateSymbolsForIndex}
+                      disabled={isLoading || isMonitoring}
+                      className="mt-1 w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-slate-600 text-sm font-medium rounded-md text-white bg-slate-700 hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-light disabled:bg-slate-800 disabled:text-slate-500"
+                    >
+                      {isLoading ? (
+                        <>
+                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Loading...
+                        </>
+                      ) : (
+                        <>
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Get Symbols
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="col-span-1">
+                    {/* Empty space as required */}
+                  </div>
+                </div>
+                
+                {/* Row 2: Buy/Sell Selector (25%), Product Type (25%), Order Type (25%), Offline Order (25%) */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div>
+                    <label htmlFor="trade-action" className="text-sm font-medium text-slate-400">Action</label>
+                    <select
+                      id="trade-action"
+                      name="tradeAction"
+                      value={inputs.tradeAction}
+                      onChange={(e) => handleInputChange('tradeAction', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      <option value="BUY">BUY</option>
+                      <option value="SELL">SELL</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="product-type" className="text-sm font-medium text-slate-400">Product Type</label>
+                    <select
+                      id="product-type"
+                      name="productType"
+                      value={inputs.productType}
+                      onChange={(e) => handleInputChange('productType', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      <option value="INTRADAY">INTRADAY</option>
+                      <option value="DELIVERY">DELIVERY</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="order-type" className="text-sm font-medium text-slate-400">Order Type</label>
+                    <select
+                      id="order-type"
+                      name="orderType"
+                      value={inputs.orderType}
+                      onChange={(e) => handleInputChange('orderType', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      <option value="MARKET">MARKET</option>
+                      <option value="LIMIT">LIMIT</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center mt-6">
+                    <input
+                      type="checkbox"
+                      id="offline-order"
+                      name="offlineOrder"
+                      checked={inputs.offlineOrder}
+                      onChange={(e) => handleInputChange('offlineOrder', e.target.checked)}
+                      className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
+                    />
+                    <label htmlFor="offline-order" className="text-sm text-slate-300 cursor-pointer">Offline Order</label>
+                  </div>
+                </div>
+                
+                {/* Row 3: CE & PE selector with lots as is */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="sm:col-span-1 lg:col-span-2">
+                    <label htmlFor="ce-option" className="text-sm font-medium text-slate-400">CE Option</label>
+                    <select
+                      id="ce-option"
+                      name="ceOptionType"
+                      value={inputs.ceSymbol}
+                      onChange={(e) => handleInputChange('ceSymbol', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      <option value="">Select CE</option>
+                      {strikeSymbols.ce.map((s, i) => (
+                        <option key={i} value={s.symbol} className="text-white bg-slate-700">
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="ce-lots" className="text-sm font-medium text-slate-400">CE Lots</label>
+                    <input
+                      type="number"
+                      id="ce-lots"
+                      name="ceLots"
+                      value={inputs.ceLots}
+                      onChange={(e) => handleInputChange('ceLots', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Qty: {getQuantityForLots('ce')}</p>
+                  </div>
+                  <div>
+                    {/* Empty space for alignment */}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="sm:col-span-1 lg:col-span-2">
+                    <label htmlFor="pe-option" className="text-sm font-medium text-slate-400">PE Option</label>
+                    <select
+                      id="pe-option"
+                      name="peOptionType"
+                      value={inputs.peSymbol}
+                      onChange={(e) => handleInputChange('peSymbol', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      <option value="">Select PE</option>
+                      {strikeSymbols.pe.map((s, i) => (
+                        <option key={i} value={s.symbol} className="text-white bg-slate-700">
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="pe-lots" className="text-sm font-medium text-slate-400">PE Lots</label>
+                    <input
+                      type="number"
+                      id="pe-lots"
+                      name="peLots"
+                      value={inputs.peLots}
+                      onChange={(e) => handleInputChange('peLots', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Qty: {getQuantityForLots('pe')}</p>
+                  </div>
+                  <div>
+                    {/* Empty space for alignment */}
+                  </div>
+                </div>
+                
+                {/* Row 4: Target (25%) Stoploss (25%) Max re-entries (25%) and 25% empty */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div>
+                    <label htmlFor="target-points" className="text-sm font-medium text-slate-400">Target (Pts)</label>
+                    <input
+                      type="number"
+                      id="target-points"
+                      name="targetPoints"
+                      value={inputs.targetPoints}
+                      onChange={(e) => handleInputChange('targetPoints', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="stoploss-points" className="text-sm font-medium text-slate-400">Stop Loss (Pts)</label>
+                    <input
+                      type="number"
+                      id="stoploss-points"
+                      name="stopLossPoints"
+                      value={inputs.stopLossPoints}
+                      onChange={(e) => handleInputChange('stopLossPoints', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="max-reentries" className="text-sm font-medium text-slate-400">Max Re-entries</label>
+                    <select
+                      id="max-reentries"
+                      name="maxReEntries"
+                      value={inputs.maxReEntries}
+                      onChange={(e) => handleInputChange('maxReEntries', e.target.value)}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                    >
+                      {Array.from({ length: 11 }, (_, i) => (
+                        <option key={i} value={i}>{i}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    {/* Empty space as required */}
+                  </div>
+                </div>
+                
+                {/* Row 5: Trailing stoploss switch (25%) and Trail stoploss to entry switch (25%) */}
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="use-trailing-sl"
+                      name="useTrailingStoploss"
+                      checked={inputs.useTrailingStoploss}
+                      onChange={(e) => handleInputChange('useTrailingStoploss', e.target.checked)}
+                      className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
+                    />
+                    <label htmlFor="use-trailing-sl" className="text-sm text-slate-300 cursor-pointer">Trailing Stoploss</label>
+                  </div>
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="trailSlToCost"
+                      checked={inputs.trailSlToCost}
+                      onChange={(e) => handleInputChange('trailSlToCost', e.target.checked)}
+                      className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
+                    />
+                    <label className="text-sm text-slate-300 cursor-pointer">Trail SL to Entry</label>
+                  </div>
+                  {inputs.useTrailingStoploss ? (
+                    <>
+                      <div>
+                        <label htmlFor="trailing-x" className="text-sm font-medium text-slate-400">Price Movement</label>
+                        <input
+                          type="number"
+                          id="trailing-x"
+                          name="trailingX"
+                          value={inputs.trailingX}
+                          onChange={(e) => handleInputChange('trailingX', e.target.value)}
+                          className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="trailing-y" className="text-sm font-medium text-slate-400">SL Movement</label>
+                        <input
+                          type="number"
+                          id="trailing-y"
+                          name="trailingY"
+                          value={inputs.trailingY}
+                          onChange={(e) => handleInputChange('trailingY', e.target.value)}
+                          className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>{/* Empty space */}</div>
+                      <div>{/* Empty space */}</div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row justify-end items-center gap-3 sm:gap-4 mt-6">
+                <button 
+                  onClick={getDetails} 
+                  disabled={isLoading || isMonitoring}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-transparent text-sm sm:text-base font-medium rounded-md text-white bg-brand hover:bg-brand-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-light disabled:bg-slate-600"
+                >
+                  <Download className="w-4 h-4 sm:w-5 sm:h-5" />
+                  Get Details
+                </button>
+                <button 
+                  onClick={handleStartMonitoring}
+                  disabled={isLoading || isMonitoring || (!inputs.ceSymbol && !inputs.peSymbol) || (inputs.ceSymbol && !ceHMA) || (inputs.peSymbol && !peHMA)}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-transparent text-sm sm:text-base font-medium rounded-md text-slate-800 bg-green-400 hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400 disabled:bg-slate-600 disabled:text-slate-400"
+                >
+                  <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+                  Start Monitoring
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* HMA Preview Cards - 1/3 width, stacked vertically */}
+        <div className="xl:col-span-1">
+          <div className="space-y-6">
+            {/* CE Details */}
+            <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md">
+              <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">CE Details</h3>
+              <div className="flex-1 flex flex-col gap-2 justify-center">
+                <span className="text-slate-400 text-sm mb-1">Symbol</span>
+                <span className="text-white font-medium mb-2 text-sm">{inputs.ceSymbol || 'Not selected'}</span>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400">LTP / %</div>
+                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? `${ceDepth.ltp} / ${ceDepth.chp}%` : '--'}</div>
+                    <div className="text-xs text-slate-400">HMA 55</div>
+                    <div className="text-sm font-mono font-bold text-brand">{ceHMA ? `₹${ceHMA.toFixed(2)}` : '--'}</div>
+                    <div className="text-xs text-slate-400">ATP</div>
+                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? ceDepth.atp : '--'}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400">Volume</div>
+                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? ceDepth.v : '--'}</div>
+                    <div className="text-xs text-slate-400">OI / OI Chg%</div>
+                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? `${ceDepth.oi} / ${ceDepth.oipercent ?? '--'}%` : '--'}</div>
+                    <div className="text-xs text-slate-400">IV</div>
+                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? ceDepth.iv : '--'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* PE Details */}
+            <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md">
+              <h3 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4">PE Details</h3>
+              <div className="flex-1 flex flex-col gap-2 justify-center">
+                <span className="text-slate-400 text-sm mb-1">Symbol</span>
+                <span className="text-white font-medium mb-2 text-sm">{inputs.peSymbol || 'Not selected'}</span>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400">LTP / %</div>
+                    <div className="text-sm font-mono font-bold text-white">{peDepth ? `${peDepth.ltp} / ${peDepth.chp}%` : '--'}</div>
+                    <div className="text-xs text-slate-400">HMA 55</div>
+                    <div className="text-sm font-mono font-bold text-brand">{peHMA ? `₹${peHMA.toFixed(2)}` : '--'}</div>
+                    <div className="text-xs text-slate-400">ATP</div>
+                    <div className="text-sm font-mono font-bold text-white">{peDepth ? peDepth.atp : '--'}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400">Volume</div>
+                    <div className="text-sm font-mono font-bold text-white">{peDepth ? peDepth.v : '--'}</div>
+                    <div className="text-xs text-slate-400">OI / OI Chg%</div>
+                    <div className="text-sm font-mono font-bold text-white">{peDepth ? `${peDepth.oi} / ${peDepth.oipercent ?? '--'}%` : '--'}</div>
+                    <div className="text-xs text-slate-400">IV</div>
+                    <div className="text-sm font-mono font-bold text-white">{peDepth ? peDepth.iv : '--'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default TradingInterface;
