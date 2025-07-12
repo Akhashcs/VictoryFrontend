@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Menu } from '@headlessui/react';
-import { ChevronDown, LogOut, DollarSign, Loader2 } from 'lucide-react';
+import { Menu, Transition } from '@headlessui/react';
+import { ChevronDown, LogOut, DollarSign, Loader2, Menu as MenuIcon, X as CloseIcon } from 'lucide-react';
 import FyersModal from '../dashboard/FyersModal';
 import StatusIndicator from '../dashboard/StatusIndicator';
 import NotificationsIcon from '../dashboard/NotificationsIcon';
@@ -21,6 +21,7 @@ const Header = () => {
   const [funds, setFunds] = useState(null);
   const [fundsLoading, setFundsLoading] = useState(false);
   const [fundsError, setFundsError] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Set up global token expiration handler
   useEffect(() => {
@@ -153,15 +154,15 @@ const Header = () => {
 
   return (
     <header className="w-full bg-slate-800/60 backdrop-blur-lg border-b border-slate-700/50 py-3 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-50">
+      {/* Left: Logo and Title */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <div className="flex items-center gap-2">
           <img src={logo} alt="Victory Logo" className="w-8 h-8 sm:w-9 sm:h-9" />
           <span className="text-white font-bold text-xl sm:text-2xl tracking-tight">Victory</span>
         </div>
         <div className="hidden sm:block w-px h-7 bg-slate-600"></div>
-        
-        {/* Navigation */}
-        <nav className="flex space-x-4 ml-4">
+        {/* Navigation (desktop only) */}
+        <nav className="hidden sm:flex space-x-4 ml-4">
           <Link
             to="/options"
             className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -184,14 +185,86 @@ const Header = () => {
           </Link>
         </nav>
       </div>
-      
-      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+      {/* Hamburger for mobile (extreme right) */}
+      <div className="flex sm:hidden items-center ml-auto">
+        <button
+          className="p-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 focus:outline-none"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Open menu"
+        >
+          <MenuIcon className="w-6 h-6" />
+        </button>
+      </div>
+      {/* Mobile menu drawer */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Overlay (full page, above all content) */}
+          <div className="fixed inset-0 bg-black bg-opacity-60 z-40" onClick={() => setMobileMenuOpen(false)}></div>
+          {/* Drawer with its own background layer */}
+          <div className="relative z-50 h-full">
+            <div className="absolute inset-0 bg-black bg-opacity-20 pointer-events-none" />
+            <div className="relative bg-slate-800 w-64 max-w-full h-full shadow-xl p-6 flex flex-col">
+              <button
+                className="absolute top-4 right-4 p-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 focus:outline-none"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <CloseIcon className="w-6 h-6" />
+              </button>
+              {/* User info */}
+              <div className="flex flex-col items-start gap-2 mb-8 mt-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white font-bold text-lg">
+                    {user?.name ? user.name[0] : <DollarSign className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <div className="text-white font-semibold text-base truncate max-w-[120px]">{user?.name || 'User'}</div>
+                    <div className="text-slate-400 text-xs truncate max-w-[120px]">{user?.email || ''}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="mt-2 flex items-center gap-2 px-3 py-1 bg-red-700 text-white rounded-md text-xs font-medium hover:bg-red-800"
+                >
+                  <LogOut className="w-4 h-4" /> Logout
+                </button>
+              </div>
+              {/* Navigation links */}
+              <nav className="flex flex-col gap-2">
+                <Link
+                  to="/options"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    location.pathname === '/options'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Options
+                </Link>
+                <Link
+                  to="/backtest"
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    location.pathname === '/backtest'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Backtest Zone
+                </Link>
+              </nav>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Right side (status, notifications, fyers, etc.) */}
+      <div className="hidden sm:flex items-center gap-2 sm:gap-4 min-w-0">
         {/* Status Indicators */}
         <div className="flex items-center gap-2 sm:gap-3">
           <StatusIndicator type="market" status={marketStatus} />
           <StatusIndicator type="server" status={serverStatus} onRefresh={refreshServerStatus} />
         </div>
-        
         {/* Fyers User Dropdown */}
         {fyersStatus.connected && fyersStatus.profileName && (
           <Menu as="div" className="relative">
