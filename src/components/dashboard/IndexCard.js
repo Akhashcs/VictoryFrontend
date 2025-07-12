@@ -1,43 +1,67 @@
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 
-const IndexCard = ({ data, loading = false, index = 0, compact = false }) => {
+const IndexCard = ({ data, loading = false, index = 0, compact = false, mini = false }) => {
+  // Check for live data from WebSocket cache
+  const [liveData, setLiveData] = React.useState(null);
+  
+  React.useEffect(() => {
+    if (data && data.indexName && window.marketDataCache) {
+      const cachedData = window.marketDataCache.get(data.indexName);
+      if (cachedData && cachedData.spotData) {
+        setLiveData(cachedData);
+        console.log(`📊 IndexCard ${data.indexName} using live data:`, cachedData.spotData.ltp);
+      }
+    }
+    
+    // Set up interval to check for updates
+    const interval = setInterval(() => {
+      if (data && data.indexName && window.marketDataCache) {
+        const cachedData = window.marketDataCache.get(data.indexName);
+        if (cachedData && cachedData.spotData) {
+          setLiveData(cachedData);
+          // Only log occasionally to avoid spam
+          if (Math.random() < 0.1) { // 10% chance to log
+            console.log(`📊 IndexCard ${data.indexName} updated with live data:`, cachedData.spotData.ltp);
+          }
+        }
+      }
+    }, 1000); // Check every second
+    
+    return () => clearInterval(interval);
+  }, [data?.indexName]);
+
   if (loading) {
     return (
-      <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700/50 animate-pulse">
-        <div className="flex items-center justify-between mb-4">
-          <div className="h-6 bg-slate-700 rounded w-32"></div>
+      <div className={`bg-slate-900/60 ${mini ? 'p-2' : compact ? 'p-4' : 'p-5'} rounded-xl border border-slate-700/50 animate-pulse`}>
+        <div className="flex items-center justify-between mb-2">
+          <div className="h-6 bg-slate-700 rounded w-20"></div>
         </div>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="h-8 bg-slate-700 rounded w-24"></div>
-            <div className="h-6 bg-slate-700 rounded w-16"></div>
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 pt-4 border-t border-slate-700">
-            <div className="h-4 bg-slate-700 rounded w-full"></div>
-            <div className="h-4 bg-slate-700 rounded w-full"></div>
-            <div className="h-4 bg-slate-700 rounded w-full"></div>
-            <div className="h-4 bg-slate-700 rounded w-full"></div>
-          </div>
+        <div className="flex items-center justify-between">
+          <div className="h-8 bg-slate-700 rounded w-16"></div>
+          <div className="h-6 bg-slate-700 rounded w-10"></div>
         </div>
       </div>
     );
   }
 
-  if (!data || !data.spotData) {
+  // Use live data if available, otherwise fall back to props data
+  const displayData = liveData || data;
+
+  if (!displayData || !displayData.spotData) {
     return (
-      <div className="bg-slate-800/50 p-5 rounded-xl border border-slate-700/50 flex flex-col items-center justify-center min-h-[260px]">
+      <div className={`bg-slate-900/60 ${mini ? 'p-2' : compact ? 'p-4' : 'p-5'} rounded-xl border border-slate-700/50 flex flex-col items-center justify-center min-h-[80px]`}>
         <div className="text-center text-slate-500">
-          <svg className="w-10 h-10 mx-auto mb-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-6 h-6 mx-auto mb-1 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-sm font-medium">No data available</p>
+          <p className="text-xs font-medium">No data</p>
         </div>
       </div>
     );
   }
 
-  const { indexName, spotData } = data;
+  const { indexName, spotData } = displayData;
 
   const getDisplayName = (indexName) => {
     const nameMap = {
@@ -75,10 +99,27 @@ const IndexCard = ({ data, loading = false, index = 0, compact = false }) => {
     return null;
   };
 
+  // Mini version (super compact)
+  if (mini) {
+    return (
+      <div className="bg-slate-900/60 p-2 rounded-md border border-slate-700/50 flex flex-col items-start w-full h-full min-h-[80px] min-w-0 text-left">
+        <div className="flex items-center gap-1 mb-1 w-full">
+          <span className="text-xs font-bold text-slate-200 truncate w-full">{getDisplayName(indexName)}</span>
+        </div>
+        <div className="text-base font-bold text-white mb-0.5 w-full">{formatNumber(spotData?.ltp)}</div>
+        <div className="flex items-center gap-1 text-xs font-semibold w-full">
+          {getTrendIcon(spotData?.change)}
+          <span className={getChangeColor(spotData?.change)}>{formatNumber(spotData?.change, true)}</span>
+          <span className={getChangeColor(spotData?.change)}>{formatPercentage(spotData?.changePercent)}</span>
+        </div>
+      </div>
+    );
+  }
+
   // Compact version
   if (compact) {
     return (
-      <div className={`bg-slate-800/50 p-4 rounded-lg border border-slate-700/50 ${index === 0 ? 'mt-8' : 'mt-0 sm:mt-8'}`}>
+      <div className={`bg-slate-900/60 p-4 rounded-lg border border-slate-700/50 ${index === 0 ? 'mt-8' : 'mt-0 sm:mt-8'}`}>
         {/* Header */}
         <div className="flex items-center justify-between mb-2">
           <span className="text-slate-300 font-medium text-lg">
@@ -117,7 +158,7 @@ const IndexCard = ({ data, loading = false, index = 0, compact = false }) => {
 
   // Original version
   return (
-    <div className={`bg-slate-800/50 p-8 rounded-lg border border-slate-700/50 ${index === 0 ? 'mt-8' : 'mt-0 sm:mt-8'}`}>
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 shadow-md w-full p-4 text-left">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 border-b border-slate-700/50 pb-2">
         <span className="text-slate-300 font-medium text-xl">

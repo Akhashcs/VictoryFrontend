@@ -173,7 +173,8 @@ api.interceptors.response.use(
 let ws = null;
 let wsCallbacks = {
   marketData: [],
-  tradingState: []
+  tradingState: [],
+  tradeLogUpdate: []
 };
 
 /**
@@ -217,6 +218,16 @@ export const connectWebSocket = (token) => {
         } else if (data.type === 'tradingState') {
           console.log('📋 Processing trading state update');
           wsCallbacks.tradingState.forEach(callback => callback(data.data));
+        } else if (data.type === 'trade_log_update') {
+          console.log('📝 Processing trade log update:', data.data);
+          console.log('📝 Trade log update callbacks:', wsCallbacks.tradeLogUpdate.length);
+          wsCallbacks.tradeLogUpdate.forEach(callback => {
+            try {
+              callback(data.data);
+            } catch (error) {
+              console.error('Error in trade log update callback:', error);
+            }
+          });
         } else if (data.type === 'auth') {
           console.log('🔐 Authentication response:', data);
           if (!data.success) {
@@ -311,6 +322,14 @@ export const onMarketData = (callback) => {
  */
 export const onTradingState = (callback) => {
   wsCallbacks.tradingState.push(callback);
+};
+
+/**
+ * Register callback for trade log updates
+ * @param {Function} callback - Callback function
+ */
+export const onTradeLogUpdate = (callback) => {
+  wsCallbacks.tradeLogUpdate.push(callback);
 };
 
 export default api; 

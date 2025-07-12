@@ -24,6 +24,9 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   const [isUpdatingLiveData, setIsUpdatingLiveData] = useState(false);
   const [lastLiveDataUpdate, setLastLiveDataUpdate] = useState(null);
   const [symbolState, setSymbolState] = useState({});
+  const [countdownTick, setCountdownTick] = useState(0); // Add this for countdown updates
+  const [slOrderModalOpen, setSlOrderModalOpen] = useState(false);
+  const [selectedSLOrder, setSelectedSLOrder] = useState(null);
 
   // Modals
   const [exitModal, setExitModal] = useState({ open: false, position: null });
@@ -158,6 +161,102 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
           return position;
         });
       });
+
+      // Update market data cache for IndexCard components
+      marketData.forEach(quote => {
+        // Convert symbol to indexName for display
+        let indexName = quote.symbol;
+        if (quote.symbol.includes('NIFTY50-INDEX')) {
+          indexName = 'NIFTY';
+        } else if (quote.symbol.includes('NIFTYBANK-INDEX')) {
+          indexName = 'BANKNIFTY';
+        } else if (quote.symbol.includes('SENSEX-INDEX')) {
+          indexName = 'SENSEX';
+        } else {
+          // For stocks and commodities, extract the name part and map to original names
+          const parts = quote.symbol.split(':');
+          if (parts.length > 1) {
+            let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
+            
+            // Map the extracted name back to the original frontend symbol names
+            const symbolMapping = {
+              // Stocks - map backend symbols to frontend names
+              'TATASTEEL': 'TATASTEEL',
+              'HINDALCO': 'HINDALCO',
+              'SBIN': 'SBIN',
+              'ADANIPORTS': 'ADANIPORTS',
+              'WIPRO': 'WIPRO',
+              'GRASIM': 'GRASIM',
+              'HCLTECH': 'HCLTECH',
+              'BPCL': 'BPCL',
+              'M_M': 'M_M',
+              'COALINDIA': 'COALINDIA',
+              'SBILIFE': 'SBILIFE',
+              'BAJFINANCE': 'BAJFINANCE',
+              'BHARTIARTL': 'BHARTIARTL',
+              'DRREDDY': 'DRREDDY',
+              'HDFCBANK': 'HDFCBANK',
+              'HEROMOTOCO': 'HEROMOTOCO',
+              'ONGC': 'ONGC',
+              'SUNPHARMA': 'SUNPHARMA',
+              'APOLLOHOSP': 'APOLLOHOSP',
+              'ICICIBANK': 'ICICIBANK',
+              
+              // Commodities - map both expiry months to the same frontend name
+              'GOLD25AUGFUT': 'GOLD',
+              'GOLD25JULFUT': 'GOLD',
+              'SILVER25AUGFUT': 'SILVER',
+              'SILVER25JULFUT': 'SILVER',
+              'CRUDEOIL25AUGFUT': 'CRUDEOIL',
+              'CRUDEOIL25JULFUT': 'CRUDEOIL',
+              'COPPER25AUGFUT': 'COPPER',
+              'COPPER25JULFUT': 'COPPER',
+              'NICKEL25AUGFUT': 'NICKEL',
+              'NICKEL25JULFUT': 'NICKEL'
+            };
+            
+            // Use the mapping if available, otherwise use the extracted name
+            indexName = symbolMapping[extractedName] || extractedName;
+          }
+        }
+
+        // Update the market data cache with the proper format
+        const formattedData = {
+          indexName: indexName,
+          spotData: {
+            ltp: quote.ltp,
+            change: quote.change,
+            changePercent: quote.changePercent,
+            open: quote.open,
+            high: quote.high,
+            low: quote.low,
+            close: quote.close,
+            volume: quote.volume,
+            timestamp: new Date(quote.timestamp).toISOString()
+          }
+        };
+
+        // Store in a global cache that IndexCard components can access
+        if (!window.marketDataCache) {
+          window.marketDataCache = new Map();
+        }
+        
+        // For commodities, only update if we have valid data (non-zero LTP)
+        const existingData = window.marketDataCache.get(indexName);
+        if (existingData && (indexName === 'GOLD' || indexName === 'SILVER' || indexName === 'CRUDEOIL' || indexName === 'COPPER' || indexName === 'NICKEL')) {
+          // Only update if the new data has valid LTP (non-zero)
+          if (quote.ltp && quote.ltp > 0) {
+            window.marketDataCache.set(indexName, formattedData);
+            console.log(`📊 Updated cache for ${indexName} (from ${quote.symbol}) with valid LTP:`, formattedData.spotData.ltp);
+          } else {
+            console.log(`⚠️ Skipping update for ${indexName} (from ${quote.symbol}) due to invalid LTP:`, quote.ltp);
+          }
+        } else {
+          // For non-commodities, always update
+          window.marketDataCache.set(indexName, formattedData);
+          console.log(`📊 Updated cache for ${indexName} (from ${quote.symbol}):`, formattedData.spotData.ltp);
+        }
+      });
     };
 
     // Register the callback for market data updates
@@ -276,7 +375,6 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                       ...prev,
                       { ...newPosition, slOrder }
                     ]);
-                    setMonitoredSymbols(prev => prev.filter(s => s.id !== symbol.id));
                     onTradeLog({
                       message: `[${symbol.tradingMode}] BUY order for ${symbol.symbol} executed at ${formatPrice(ltp)}.`,
                       data: { ...newPosition, ...res }
@@ -313,12 +411,6 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
           setSymbolState(prev => ({ ...prev, [symbol.id]: newSymbolState }));
         });
 
-        // Filter out symbols that have moved to active positions
-        const stillMonitoring = monitoredSymbols.filter(s => 
-          !activePositions.some(p => p.id.startsWith(s.symbol))
-        );
-        
-        setMonitoredSymbols(stillMonitoring);
         setLastLiveDataUpdate(now);
 
       } catch (error) {
@@ -605,6 +697,19 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     };
   }, [monitoredSymbols, setMonitoredSymbols]);
 
+  // Add countdown timer for CONFIRMING status
+  useEffect(() => {
+    const hasConfirmingSymbols = monitoredSymbols.some(s => s.triggerStatus === 'CONFIRMING');
+    
+    if (hasConfirmingSymbols) {
+      const interval = setInterval(() => {
+        setCountdownTick(prev => prev + 1);
+      }, 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [monitoredSymbols]);
+
   const handlePositionClosed = (closedPosition) => {
     console.log('Position closed:', closedPosition);
     
@@ -631,18 +736,11 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
       console.log(`🔄 Exiting position for ${position.symbol}`);
       
       // Call backend API to exit position
-      const response = await fetch('/api/monitoring/exit-position', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          positionId: position.id
-        })
+      const response = await api.post('/monitoring/exit-position', {
+        positionId: position.id
       });
       
-      const result = await response.json();
+      const result = response.data;
       
       if (result.success) {
         console.log(`✅ Position exited successfully for ${position.symbol}`);
@@ -716,10 +814,16 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   const getStatusColor = (status) => {
     switch (status) {
       case 'WAITING': return 'text-yellow-400 bg-yellow-900/20 border border-yellow-700/30';
+      case 'CONFIRMING': return 'text-orange-400 bg-orange-900/20 border border-orange-700/30';
       case 'ORDER_PLACED': return 'text-blue-400 bg-blue-900/20 border border-blue-700/30';
-      case 'ORDER_MODIFIED': return 'text-purple-400 bg-purple-900/20 border border-purple-700/30';
       case 'ORDER_REJECTED': return 'text-red-400 bg-red-900/20 border border-red-700/30';
-      case 'WAITING_REENTRY': return 'text-orange-400 bg-orange-900/20 border border-orange-700/30';
+      case 'ORDER_CANCELLED': return 'text-purple-400 bg-purple-900/20 border border-purple-700/30';
+      case 'TARGET_HIT': return 'text-green-400 bg-green-900/20 border border-green-700/30';
+      case 'TARGET_EXIT_PENDING': return 'text-emerald-400 bg-emerald-900/20 border border-emerald-700/30';
+      case 'TARGET_EXIT_EXECUTED': return 'text-green-500 bg-green-900/30 border border-green-600/40';
+      case 'TARGET_EXIT_FAILED': return 'text-red-400 bg-red-900/20 border border-red-700/30';
+      case 'SL_HIT': return 'text-red-400 bg-red-900/20 border border-red-700/30';
+      case 'WAITING_REENTRY': return 'text-cyan-400 bg-cyan-900/20 border border-cyan-700/30';
       default: return 'text-slate-400 bg-slate-900/20 border border-slate-700/30';
     }
   };
@@ -729,17 +833,59 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     switch (symbol.triggerStatus) {
       case 'WAITING':
         return 'Waiting';
+      case 'CONFIRMING':
+        return 'Confirming';
       case 'ORDER_PLACED':
         return 'Order Placed';
-      case 'ORDER_MODIFIED':
-        return 'Order Modified';
       case 'ORDER_REJECTED':
         return 'Order Rejected';
+      case 'ORDER_CANCELLED':
+        return 'Order Cancelled';
+      case 'TARGET_HIT':
+        return 'Target Hit';
+      case 'TARGET_EXIT_PENDING':
+        return 'Target Exit Pending';
+      case 'TARGET_EXIT_EXECUTED':
+        return 'Target Exit Executed';
+      case 'TARGET_EXIT_FAILED':
+        return 'Target Exit Failed';
+      case 'SL_HIT':
+        return 'SL Hit';
       case 'WAITING_REENTRY':
         return 'Waiting Re-entry';
       default:
         return 'Waiting';
     }
+  };
+
+  // Add function to calculate countdown for CONFIRMING status
+  const getConfirmingCountdown = (symbol) => {
+    if (symbol.triggerStatus !== 'CONFIRMING' || !symbol.pendingSignal?.triggeredAt) {
+      return null;
+    }
+
+    const now = new Date();
+    const triggeredAt = new Date(symbol.pendingSignal.triggeredAt);
+    
+    // Calculate time until next 5-minute candle close (MM:59)
+    const currentMinute = now.getMinutes();
+    const currentSecond = now.getSeconds();
+    
+    // Find the next 5-minute boundary (MM:59)
+    const nextFiveMinBoundary = Math.ceil(currentMinute / 5) * 5 - 1; // 4, 9, 14, 19, etc.
+    const minutesUntilBoundary = nextFiveMinBoundary - currentMinute;
+    const secondsUntilBoundary = 59 - currentSecond;
+    
+    const totalSecondsLeft = minutesUntilBoundary * 60 + secondsUntilBoundary;
+    
+    if (totalSecondsLeft <= 0) {
+      return "Placing order...";
+    }
+    
+    const minutesLeft = Math.floor(totalSecondsLeft / 60);
+    const secondsLeft = totalSecondsLeft % 60;
+    
+    return `${minutesLeft}m ${secondsLeft}s left`;
   };
 
   const calculateTargetSL = (currentLTP, targetPoints, stopLossPoints) => {
@@ -793,18 +939,11 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     try {
       console.log(`📋 Placing limit order for ${symbol.symbol}`);
       
-      const response = await fetch('/api/monitoring/place-limit-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          symbolId: symbol.id
-        })
+      const response = await api.post('/monitoring/place-limit-order', {
+        symbolId: symbol.id
       });
 
-      const result = await response.json();
+      const result = response.data;
       
       if (result.success) {
         console.log('✅ Limit order placed successfully:', result.message);
@@ -817,6 +956,11 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     } catch (error) {
       console.error('❌ Error placing limit order:', error);
     }
+  };
+
+  const handleViewSLOrder = (position) => {
+    setSelectedSLOrder(position.slOrderDetails);
+    setSlOrderModalOpen(true);
   };
 
   // Manual HMA refresh handler
@@ -1011,6 +1155,9 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(item.triggerStatus)}`}
                                 title={item.orderModificationReason ? `Reason: ${item.orderModificationReason}` : ''}>
                             {getStatusDescription(item)}
+                            {item.triggerStatus === 'CONFIRMING' && getConfirmingCountdown(item) !== null && (
+                              <span className="ml-2 text-xs text-slate-400">({getConfirmingCountdown(item)})</span>
+                            )}
                           </span>
                         </td>
                         <td className="py-3 px-3 text-center">
@@ -1168,6 +1315,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                     <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">Stop Loss</th>
                     <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">Invested</th>
                     <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">P&L</th>
+                    <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Status</th>
                     <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Actions</th>
                   </tr>
                 </thead>
@@ -1224,6 +1372,14 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
+                        <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(position.orderStatus || 'Active')}`}>
+                          {position.orderStatus === 'TARGET_EXIT_PENDING' ? 'Target Exit Pending' :
+                           position.orderStatus === 'TARGET_EXIT_EXECUTED' ? 'Target Exit Executed' :
+                           position.orderStatus === 'TARGET_EXIT_FAILED' ? 'Target Exit Failed' :
+                           position.orderStatus || 'Active'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
                         <div className="flex flex-col items-center gap-1">
                           <button
                             onClick={() => setSlmModal({ open: true, position })}
@@ -1235,10 +1391,19 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                           <button
                             onClick={() => handleExitPosition(position)}
                             className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
-                            title={`Exit position ${position.symbol}`}
+                            title={`Exit position for ${position.symbol}`}
                           >
                             Exit
                           </button>
+                          {position.slOrderDetails && (
+                            <button
+                              onClick={() => handleViewSLOrder(position)}
+                              className="px-2 py-1 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
+                              title={`View SL order for ${position.symbol}`}
+                            >
+                              View SL Order
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1311,6 +1476,81 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                   <span className="text-slate-400">No modifications yet</span>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SL Order Modal */}
+      {slOrderModalOpen && selectedSLOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">SL Order Details</h3>
+              <button
+                onClick={() => setSlOrderModalOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Order ID:</span>
+                <span className="text-white font-mono text-sm">{selectedSLOrder.orderId}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-slate-400">Stop Loss Price:</span>
+                <span className="text-red-400 font-semibold">₹{selectedSLOrder.stopLossPrice?.toFixed(2)}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-slate-400">Trigger Price:</span>
+                <span className="text-yellow-400 font-semibold">₹{selectedSLOrder.triggerPrice?.toFixed(2)}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-slate-400">Placed At:</span>
+                <span className="text-white text-sm">{new Date(selectedSLOrder.placedAt).toLocaleTimeString()}</span>
+              </div>
+              
+              {selectedSLOrder.modifications && selectedSLOrder.modifications.length > 0 && (
+                <div className="mt-4">
+                  <h4 className="text-slate-300 font-semibold mb-2">Modifications:</h4>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {selectedSLOrder.modifications.map((mod, index) => (
+                      <div key={index} className="bg-slate-700 rounded p-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Time:</span>
+                          <span className="text-white">{new Date(mod.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Old Price:</span>
+                          <span className="text-red-400">₹{mod.oldPrice?.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">New Price:</span>
+                          <span className="text-green-400">₹{mod.newPrice?.toFixed(2)}</span>
+                        </div>
+                        <div className="text-slate-400 text-xs mt-1">
+                          Reason: {mod.reason}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setSlOrderModalOpen(false)}
+                className="px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-500"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

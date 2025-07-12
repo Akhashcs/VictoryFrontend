@@ -15,7 +15,9 @@ const SizingExecution = ({ inputs, handleInputChange, getQuantityForLots }) => {
             onChange={(e) => handleInputChange('ceLots', e.target.value)}
             className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white"
           />
-          <p className="text-xs text-slate-500 mt-1">Qty: {getQuantityForLots('ce')}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Qty: {inputs.index.lotSize || 1}/lot
+          </p>
         </div>
         <div>
           <label htmlFor="pe-lots" className="text-sm font-medium text-slate-400">PE Lots</label>
@@ -27,7 +29,9 @@ const SizingExecution = ({ inputs, handleInputChange, getQuantityForLots }) => {
             onChange={(e) => handleInputChange('peLots', e.target.value)}
             className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white"
           />
-          <p className="text-xs text-slate-500 mt-1">Qty: {getQuantityForLots('pe')}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Qty: {inputs.index.lotSize || 1}/lot
+          </p>
         </div>
         <div className="col-span-2 grid grid-cols-2 gap-4">
           <div>

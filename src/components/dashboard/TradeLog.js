@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, Eye, X, TrendingUp, TrendingDown, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-react';
 import TradeService from '../../services/tradeService';
 import { useAuth } from '../../contexts/AuthContext';
-// import io from 'socket.io-client';
 
 const TradeLogService = {
   getTodayLogs: async () => await TradeService.getTodayTradeLogs(),
@@ -56,28 +55,14 @@ const TradeLog = () => {
       });
     };
 
-    // Listen for WebSocket messages
-    const handleWebSocketMessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === 'trade_log_update') {
-          handleTradeLogUpdate(message.data);
-        }
-      } catch (error) {
-        console.error('[TradeLog] Error parsing WebSocket message:', error);
-      }
-    };
-
-    // Get WebSocket connection from global scope or create one
-    const ws = window.tradingWebSocket;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.addEventListener('message', handleWebSocketMessage);
-    }
+    console.log('[TradeLog] Registering for trade log updates...');
+    // Register for trade log updates using the TradeService
+    TradeService.onTradeLogUpdate(handleTradeLogUpdate);
+    console.log('[TradeLog] Trade log update callback registered');
 
     return () => {
-      if (ws) {
-        ws.removeEventListener('message', handleWebSocketMessage);
-      }
+      // Note: The WebSocket service handles cleanup automatically
+      console.log('[TradeLog] Component unmounting, callback cleanup handled by WebSocket service');
     };
   }, [user]);
 
@@ -335,6 +320,17 @@ const AllTradesModal = ({ onClose, deduplicateLogs }) => {
 
 // Helper function to generate human-readable details for each log entry
 const getLogDetails = (log) => {
+  // First, try to use the remarks field for better descriptions
+  if (log.remarks) {
+    return log.remarks;
+  }
+  
+  // Fallback to fyersRemarks if available
+  if (log.fyersRemarks) {
+    return log.fyersRemarks;
+  }
+
+  // Fallback to generated details
   let details = '';
 
   switch (log.action) {

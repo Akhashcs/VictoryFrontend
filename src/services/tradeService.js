@@ -1,4 +1,4 @@
-import api, { onTradingState } from './api';
+import api, { onTradingState, onTradeLogUpdate } from './api';
 
 /**
  * Trade Service
@@ -182,6 +182,14 @@ class TradeService {
    */
   static onTradingStateUpdate(callback) {
     onTradingState(callback);
+  }
+
+  /**
+   * Register callback for trade log updates
+   * @param {Function} callback - Callback function
+   */
+  static onTradeLogUpdate(callback) {
+    onTradeLogUpdate(callback);
   }
 }
 

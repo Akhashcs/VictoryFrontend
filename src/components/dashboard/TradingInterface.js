@@ -7,7 +7,7 @@ import {
   Clock,
   Calendar
 } from 'lucide-react';
-import { INDEX_CONFIGS } from '../../utils/futuresHelper';
+import SymbolConfigService from '../../services/symbolConfigService';
 import { HMAService } from '../../services/hmaService';
 import BackendMonitoringService from '../../services/backendMonitoringService';
 import TradeService from '../../services/tradeService';
@@ -47,15 +47,18 @@ const StrategyMonitoringCard = ({ title, symbol, hmaConfig, quantity, targetPoin
   );
 };
 
-const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatusUpdate, onTradeLog, indicesData = [], onMonitoringUpdate }) => {
+const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatusUpdate, onTradeLog, indicesData = [], onMonitoringUpdate, symbolConfigs = {} }) => {
+  // Get the first available symbol as default, or use a fallback
+  const defaultSymbol = Object.values(symbolConfigs)[0] || { symbolName: '', lotSize: 75, defaultTarget: 40, defaultStopLoss: 10 };
+  
   const [inputs, setInputs] = useState({
-    index: INDEX_CONFIGS.NIFTY,
+    index: defaultSymbol,
     ceSymbol: '',
     peSymbol: '',
     ceLots: 1,
     peLots: 1,
-    targetPoints: INDEX_CONFIGS.NIFTY.defaultTarget,
-    stopLossPoints: INDEX_CONFIGS.NIFTY.defaultStopLoss,
+    targetPoints: defaultSymbol.defaultTarget,
+    stopLossPoints: defaultSymbol.defaultStopLoss,
     productType: 'INTRADAY',
     orderType: 'MARKET',
     trailSlToCost: false,
@@ -64,13 +67,24 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
     useTrailingStoploss: false,
     trailingX: 20,
     trailingY: 15,
-    // New time inputs
-    startTime: '09:15',
-    endTime: '15:15',
     // New trading inputs
     tradeDirection: 'BUY',
     offlineOrder: false
   });
+
+  // Ensure default index updates when symbolConfigs loads
+  useEffect(() => {
+    const firstSymbol = Object.values(symbolConfigs)[0];
+    if (firstSymbol && (!inputs.index || !inputs.index.symbolName || inputs.index.symbolName !== firstSymbol.symbolName)) {
+      setInputs(prev => ({
+        ...prev,
+        index: firstSymbol,
+        targetPoints: firstSymbol.defaultTarget,
+        stopLossPoints: firstSymbol.defaultStopLoss
+      }));
+    }
+    // eslint-disable-next-line
+  }, [symbolConfigs]);
 
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [ceHMA, setCeHMA] = useState(null);
@@ -99,14 +113,35 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
     setIsLoading(true);
     
     console.log('[TradingInterface] generateSymbolsForIndex called with:', inputs.index.name);
-    console.log('[TradingInterface] indicesData:', indicesData);
+    console.log('[TradingInterface] inputs.index:', inputs.index);
+    console.log('[TradingInterface] symbolConfigs:', symbolConfigs);
+    console.log('[TradingInterface] symbolConfigs keys:', Object.keys(symbolConfigs));
     
-    const indexData = indicesData.find(data => data.indexName === inputs.index.name);
-    console.log('[TradingInterface] found indexData:', indexData);
+    // Step 1: Get the symbolName from the selected index (e.g., "NIFTY W")
+    const symbolName = inputs.index.symbolName || inputs.index.name;
+    console.log('[TradingInterface] Symbol name for database lookup:', symbolName);
+    
+    // Step 2: Get the symbolInput for market data lookup (e.g., "NSE:NIFTY50-INDEX")
+    const symbolInput = inputs.index.symbolInput;
+    console.log('[TradingInterface] Symbol input for market data lookup:', symbolInput);
+    
+    if (!symbolInput) {
+      console.log('[TradingInterface] No symbolInput found, cannot proceed');
+      console.log('[TradingInterface] Available symbol configs:', symbolConfigs);
+      window.showToast('Symbol configuration is incomplete. Please check symbol settings.', 'error');
+      return;
+    }
+    
+    // Step 3: Find market data using symbolInput
+    console.log('[TradingInterface] Available market data:', indicesData.map(d => ({ indexName: d.indexName, symbol: d.symbol })));
+    const indexData = indicesData.find(data => 
+      data.indexName === symbolInput || data.symbol === symbolInput
+    );
+    console.log('[TradingInterface] Found market data:', indexData);
     
     if (!indexData || !indexData.spotData) {
-      console.log('[TradingInterface] No indexData or spotData found, returning');
-      window.showToast('No market data available for the selected index.', 'error');
+      console.log('[TradingInterface] No market data found for symbolInput:', symbolInput);
+      window.showToast('No market data available for the selected symbol.', 'error');
       return;
     }
     
@@ -114,12 +149,32 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
     console.log('[TradingInterface] Using LTP:', ltp);
     
     try {
-      // Use backend symbol service to get proper Fyers format symbols
-      const response = await api.get(`/market/symbols/${inputs.index.name}`, {
-        params: { spotPrice: ltp }
+      // Step 4: Send request to backend with symbolName and LTP
+      // Backend will:
+      // - Search MongoDB for symbolName to get configuration
+      // - Use LTP to calculate ATM strike
+      // - Generate CE/PE symbols based on configuration
+      console.log('[TradingInterface] Sending request to backend for symbol:', symbolName, 'with LTP:', ltp);
+      const response = await api.get(`/market/symbols/${symbolName}`, {
+        params: { 
+          spotPrice: ltp
+        }
       });
+      
       const symbols = response.data.data;
       console.log('[TradingInterface] Generated symbols from backend:', symbols);
+      
+      // Update the lotSize from the API response
+      if (symbols.lotSize) {
+        setInputs(prev => ({
+          ...prev,
+          index: {
+            ...prev.index,
+            lotSize: symbols.lotSize
+          }
+        }));
+      }
+      
       setStrikeSymbols(symbols);
       window.showToast(`Symbols generated successfully using LTP: ${ltp}`, 'success');
     } catch (error) {
@@ -142,13 +197,20 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
   };
 
   const handleIndexChange = (indexKey) => {
+    const selectedSymbol = symbolConfigs[indexKey];
+    if (!selectedSymbol) return;
+    
+    console.log('[TradingInterface] handleIndexChange - selectedSymbol:', selectedSymbol);
+    console.log('[TradingInterface] handleIndexChange - indexKey:', indexKey);
+    
     setInputs(prev => ({
       ...prev,
-      index: INDEX_CONFIGS[indexKey],
+      index: selectedSymbol, // Use the full config object
       ceSymbol: '',
       peSymbol: '',
-      targetPoints: INDEX_CONFIGS[indexKey].defaultTarget,
-      stopLossPoints: INDEX_CONFIGS[indexKey].defaultStopLoss
+      targetPoints: selectedSymbol.defaultTarget,
+      stopLossPoints: selectedSymbol.defaultStopLoss,
+      lotSize: selectedSymbol.lotSize || 1
     }));
     setCeHMA(null);
     setPeHMA(null);
@@ -408,7 +470,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-6">Strategy Setup</h2>
             
             <div className="space-y-4 sm:space-y-6">
-              {/* Row 1: Index Selection (50%) & Get Symbols button (25%) & Empty (25%) */}
+              {/* Row 1: Index Selection (50%) & Get Symbols button (25%) & View Option Chain button (25%) */}
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div className="sm:col-span-2 flex items-end gap-2">
                   <div className="flex-1">
@@ -416,13 +478,15 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     <select
                       id="index-select"
                       name="indexSelect"
-                      value={inputs.index.name}
+                      value={inputs.index.symbolName}
                       onChange={(e) => handleIndexChange(e.target.value)}
                       className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
                     >
-                      <option value="NIFTY">NIFTY</option>
-                      <option value="BANKNIFTY">BANKNIFTY</option>
-                      <option value="SENSEX">SENSEX</option>
+                      {Object.entries(symbolConfigs).map(([key, config]) => (
+                        <option key={key} value={key} className="text-white bg-slate-700">
+                          {config.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <button
@@ -448,7 +512,18 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     )}
                   </button>
                 </div>
-                <div className="sm:col-span-2"></div>
+                <div className="sm:col-span-1 flex items-end">
+                  <button
+                    onClick={() => window.open('https://web.sensibull.com/option-chain?view=greeks', '_blank', 'noopener,noreferrer')}
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-green-700 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                    View Option Chain
+                  </button>
+                </div>
+                <div className="sm:col-span-1"></div>
               </div>
 
               {/* Row 2: Buy/Sell Selector (25%), Product type (25%), Order Type (25%), Offline order (25%) */}
@@ -539,7 +614,9 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       onChange={(e) => handleInputChange('ceLots', e.target.value)}
                       className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
                     />
-                    <p className="text-xs text-slate-500 mt-1">Qty: {getQuantityForLots('ce')}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Qty: {inputs.index.lotSize || 1}/lot
+                    </p>
                   </div>
                   <div className="sm:col-span-1 lg:col-span-3">
                     <label htmlFor="pe-option" className="text-sm font-medium text-slate-400">PE Option</label>
@@ -570,7 +647,9 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       onChange={(e) => handleInputChange('peLots', e.target.value)}
                       className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
                     />
-                    <p className="text-xs text-slate-500 mt-1">Qty: {getQuantityForLots('pe')}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Qty: {inputs.index.lotSize || 1}/lot
+                    </p>
                   </div>
                 </div>
 
@@ -680,34 +759,10 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
               {/* Time Settings */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-700">
                 <div>
-                  <label htmlFor="start-time" className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    id="start-time"
-                    name="startTime"
-                    value={inputs.startTime}
-                    onChange={(e) => handleInputChange('startTime', e.target.value)}
-                    className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">When to start placing orders</p>
+                  {/* Empty space */}
                 </div>
                 <div>
-                  <label htmlFor="end-time" className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    id="end-time"
-                    name="endTime"
-                    value={inputs.endTime}
-                    onChange={(e) => handleInputChange('endTime', e.target.value)}
-                    className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
-                  />
-                  <p className="text-xs text-slate-500 mt-1">Close all intraday orders</p>
+                  {/* Empty space */}
                 </div>
               </div>
             </div>
@@ -826,6 +881,8 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
           </div>
         </div>
       </div>
+
+
     </div>
   );
 };

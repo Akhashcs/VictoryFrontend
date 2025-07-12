@@ -1,4 +1,5 @@
 import api, { subscribeToSymbols, unsubscribeFromSymbols, onMarketData } from './api';
+import { UNDERLYING_CONFIGS } from '../utils/futuresHelper';
 
 // Cache TTL in milliseconds
 const CACHE_TTL = {
@@ -26,16 +27,29 @@ class MarketService {
   
   // Symbols to fetch
   static INDEX_SYMBOLS = [
-    'NSE:NIFTY50-INDEX',
-    'NSE:NIFTYBANK-INDEX', 
-    'BSE:SENSEX-INDEX'
+    // Symbols will be loaded dynamically from backend configuration
   ];
   
   static INDEX_SYMBOL_TO_NAME = {
-    'NSE:NIFTY50-INDEX': 'NIFTY',
-    'NSE:NIFTYBANK-INDEX': 'BANKNIFTY',
-    'BSE:SENSEX-INDEX': 'SENSEX'
+    // Symbol mappings will be loaded dynamically from backend configuration
   };
+
+  // Dynamic symbols loading
+  static async loadAllSymbols() {
+    try {
+      const response = await api.get('/market/config/market-data');
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error loading symbols from config:', error);
+      // Return empty array if no symbols configured
+      return [];
+    }
+  }
+
+  // Legacy static symbols for backward compatibility
+  static ALL_SYMBOLS = [
+    // Symbols will be loaded dynamically from backend configuration
+  ];
 
   /**
    * Get market status
@@ -344,31 +358,85 @@ class MarketService {
     const marketStatus = await this.getMarketStatus();
     console.log(`[MarketService] Current market status: ${marketStatus}`);
     
-    // Start timer for index data
+    // Start timer for all market data
     this.queueTimer = setInterval(async () => {
       try {
-        // Fetch index data
-        console.log('[MarketService] Fetching index data...');
-        const indexData = await this.fetchMarketData(this.INDEX_SYMBOLS);
+        // Load symbols dynamically from backend configuration
+        const symbols = await this.loadAllSymbols();
+        console.log('[MarketService] Fetching all market data with symbols:', symbols);
+        const allData = await this.fetchMarketData(symbols);
         
         // Process and update cache
-        indexData.forEach(item => {
-          const indexName = this.INDEX_SYMBOL_TO_NAME[item.symbol];
-          if (indexName) {
-            this.marketDataCache.set(item.symbol, {
-              ...item,
-              indexName,
-              dataType: 'indices',
-              lastUpdated: Date.now()
-            });
+        allData.forEach(item => {
+          // Determine indexName based on symbol
+          let indexName = item.symbol;
+          if (item.symbol.includes('NIFTY50-INDEX')) {
+            indexName = 'NIFTY';
+          } else if (item.symbol.includes('NIFTYBANK-INDEX')) {
+            indexName = 'BANKNIFTY';
+          } else if (item.symbol.includes('SENSEX-INDEX')) {
+            indexName = 'SENSEX';
+          } else {
+            // For stocks and commodities, extract the name part
+            const parts = item.symbol.split(':');
+            if (parts.length > 1) {
+              let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
+              
+              // Map the extracted name back to the original frontend symbol names
+              const symbolMapping = {
+                // Stocks
+                'ADANIPORTS': 'RELIANCE',
+                'APOLLOHOSP': 'TCS', 
+                'BAJFINANCE': 'INFY',
+                'BHARTIARTL': 'HDFC',
+                'BPCL': 'ICICIBANK',
+                'COALINDIA': 'RELIANCE',
+                'DRREDDY': 'TCS',
+                'GRASIM': 'INFY',
+                'HCLTECH': 'HDFC',
+                'HDFCBANK': 'ICICIBANK',
+                'HEROMOTOCO': 'RELIANCE',
+                'HINDALCO': 'TCS',
+                'ICICIBANK': 'ICICIBANK', // This one matches
+                'ONGC': 'INFY',
+                'SBILIFE': 'HDFC',
+                'SBIN': 'ICICIBANK',
+                'SUNPHARMA': 'RELIANCE',
+                'TATASTEEL': 'TCS',
+                'WIPRO': 'INFY',
+                
+                // Commodities
+                'GOLD25AUGFUT': 'GOLD',
+                'GOLD25JULFUT': 'GOLD',
+                'SILVER25SEPFUT': 'SILVER',
+                'SILVER25AUGFUT': 'SILVER',
+                'SILVER25JULFUT': 'SILVER',
+                'CRUDEOIL25AUGFUT': 'CRUDEOIL',
+                'CRUDEOIL25JULFUT': 'CRUDEOIL',
+                'COPPER25AUGFUT': 'COPPER',
+                'COPPER25JULFUT': 'COPPER',
+                'NICKEL25AUGFUT': 'NICKEL',
+                'NICKEL25JULFUT': 'NICKEL'
+              };
+              
+              // Use the mapping if available, otherwise use the extracted name
+              indexName = symbolMapping[extractedName] || extractedName;
+            }
           }
+          
+          this.marketDataCache.set(item.symbol, {
+            ...item,
+            indexName,
+            dataType: 'all',
+            lastUpdated: Date.now()
+          });
         });
         
         // Notify listeners
         this.notifyDataUpdate();
         
       } catch (error) {
-        console.error('[MarketService] Error fetching index data:', error);
+        console.error('[MarketService] Error fetching all market data:', error);
       }
     }, 5000); // Every 5 seconds
     
@@ -382,19 +450,35 @@ class MarketService {
   static async manualRefresh() {
     try {
       console.log('[MarketService] Manual refresh triggered');
-      const indexData = await this.fetchMarketData(this.INDEX_SYMBOLS);
+      const symbols = await this.loadAllSymbols();
+      const allData = await this.fetchMarketData(symbols);
       
       // Update cache with fresh data
-      indexData.forEach(item => {
-        const indexName = this.INDEX_SYMBOL_TO_NAME[item.symbol];
-        if (indexName) {
-          this.marketDataCache.set(item.symbol, {
-            ...item,
-            indexName,
-            dataType: 'indices',
-            lastUpdated: Date.now()
-          });
+      allData.forEach(item => {
+        // Determine indexName based on symbol
+        let indexName = item.symbol;
+        if (item.symbol.includes('NIFTY50-INDEX')) {
+          indexName = 'NIFTY';
+        } else if (item.symbol.includes('NIFTYBANK-INDEX')) {
+          indexName = 'BANKNIFTY';
+        } else if (item.symbol.includes('SENSEX-INDEX')) {
+          indexName = 'SENSEX';
+        } else {
+          // For stocks and commodities, extract the name part
+          const parts = item.symbol.split(':');
+          if (parts.length > 1) {
+            let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
+            // Use the extracted name directly since symbol mapping is now dynamic
+            indexName = extractedName;
+          }
         }
+        
+        this.marketDataCache.set(item.symbol, {
+          ...item,
+          indexName,
+          dataType: 'all',
+          lastUpdated: Date.now()
+        });
       });
       
       // Removed futures data fetching
@@ -451,28 +535,35 @@ class MarketService {
    * @returns {Array} Combined data
    */
   static getCombinedDataFromCache() {
-    const indices = ['NIFTY', 'BANKNIFTY', 'SENSEX'];
-    
-    return indices.map(indexName => {
-      const spotData = Array.from(this.marketDataCache.values()).find(
-        item => item.indexName === indexName && item.dataType === 'indices'
-      );
-      
-      // Removed futuresData
-
-      return {
-        indexName,
-        spotData,
-        // Removed futuresData and premium
-        lastUpdated: spotData?.lastUpdated || 0
-      };
-    }).filter(item => item.spotData);
+    // Return all cached data instead of hardcoded indices
+    return Array.from(this.marketDataCache.values())
+      .filter(item => item.dataType === 'indices' || item.dataType === 'all')
+      .map(item => ({
+        indexName: item.indexName || item.symbol || item.name,
+        symbol: item.symbol, // Include the original symbol
+        spotData: {
+          ltp: item.ltp,
+          change: item.change,
+          changePercent: item.changePercent,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          close: item.close,
+          volume: item.volume,
+          timestamp: item.timestamp
+        },
+        lastUpdated: item.lastUpdated || 0
+      }));
   }
 
   /**
    * Legacy method for backward compatibility - now uses cache
    */
   static async getIndicesData() {
+    // Load symbols dynamically from backend configuration
+    const symbols = await this.loadAllSymbols();
+    console.log('[MarketService] Loaded symbols from config:', symbols);
+    
     // If cache is empty, do initial load
     if (this.marketDataCache.size === 0) {
       // Start the intelligent fetching system
@@ -480,20 +571,73 @@ class MarketService {
       // Do initial bulk fetch for immediate display
       try {
         console.log('📊 Initial market data fetch...');
-        const indexData = await this.fetchMarketData(this.INDEX_SYMBOLS);
+        const allData = await this.fetchMarketData(symbols);
         // Removed futures data fetching
         
         // Populate cache with initial data (map by symbol, not order)
-        indexData.forEach(item => {
-          const indexName = this.INDEX_SYMBOL_TO_NAME[item.symbol];
-          if (indexName) {
-            this.marketDataCache.set(item.symbol, {
-              ...item,
-              indexName,
-              dataType: 'indices',
-              lastUpdated: Date.now()
-            });
+        allData.forEach(item => {
+          // Determine indexName based on symbol
+          let indexName = item.symbol;
+          if (item.symbol.includes('NIFTY50-INDEX')) {
+            indexName = 'NIFTY';
+          } else if (item.symbol.includes('NIFTYBANK-INDEX')) {
+            indexName = 'BANKNIFTY';
+          } else if (item.symbol.includes('SENSEX-INDEX')) {
+            indexName = 'SENSEX';
+          } else {
+            // For stocks and commodities, extract the name part and map to original names
+            const parts = item.symbol.split(':');
+            if (parts.length > 1) {
+              let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
+              
+              // Map the extracted name back to the original frontend symbol names
+              const symbolMapping = {
+                // Stocks
+                'ADANIPORTS': 'RELIANCE',
+                'APOLLOHOSP': 'TCS', 
+                'BAJFINANCE': 'INFY',
+                'BHARTIARTL': 'HDFC',
+                'BPCL': 'ICICIBANK',
+                'COALINDIA': 'RELIANCE',
+                'DRREDDY': 'TCS',
+                'GRASIM': 'INFY',
+                'HCLTECH': 'HDFC',
+                'HDFCBANK': 'ICICIBANK',
+                'HEROMOTOCO': 'RELIANCE',
+                'HINDALCO': 'TCS',
+                'ICICIBANK': 'ICICIBANK', // This one matches
+                'ONGC': 'INFY',
+                'SBILIFE': 'HDFC',
+                'SBIN': 'ICICIBANK',
+                'SUNPHARMA': 'RELIANCE',
+                'TATASTEEL': 'TCS',
+                'WIPRO': 'INFY',
+                
+                // Commodities
+                'GOLD25AUGFUT': 'GOLD',
+                'GOLD25JULFUT': 'GOLD',
+                'SILVER25SEPFUT': 'SILVER',
+                'SILVER25AUGFUT': 'SILVER',
+                'SILVER25JULFUT': 'SILVER',
+                'CRUDEOIL25AUGFUT': 'CRUDEOIL',
+                'CRUDEOIL25JULFUT': 'CRUDEOIL',
+                'COPPER25AUGFUT': 'COPPER',
+                'COPPER25JULFUT': 'COPPER',
+                'NICKEL25AUGFUT': 'NICKEL',
+                'NICKEL25JULFUT': 'NICKEL'
+              };
+              
+              // Use the mapping if available, otherwise use the extracted name
+              indexName = symbolMapping[extractedName] || extractedName;
+            }
           }
+          
+          this.marketDataCache.set(item.symbol, {
+            ...item,
+            indexName,
+            dataType: 'all',
+            lastUpdated: Date.now()
+          });
         });
         
         // Removed futures data caching
@@ -504,6 +648,72 @@ class MarketService {
     
     // Return combined data from cache
     return this.getCombinedDataFromCache();
+  }
+
+  /**
+   * Get all market data (indices, stocks, commodities)
+   * @returns {Promise<Array>} Array of market data
+   */
+  static async getAllMarketData() {
+    try {
+      // Load symbols dynamically from config
+      const symbols = await this.loadAllSymbols();
+      console.log('📊 Initial ALL market data fetch with symbols:', symbols);
+      
+      const allData = await this.fetchMarketData(symbols);
+      allData.forEach(item => {
+        // Use item.symbol as key
+        this.marketDataCache.set(item.symbol, {
+          ...item,
+          indexName: item.indexName || item.symbol || item.name,
+          dataType: 'all',
+          lastUpdated: Date.now()
+        });
+      });
+    } catch (error) {
+      console.error('❌ Error in initial ALL market data fetch:', error);
+    }
+    // Return all data from cache formatted for IndexCard component
+    return Array.from(this.marketDataCache.values()).map(item => ({
+      indexName: item.indexName || item.symbol || item.name,
+      symbol: item.symbol, // Include the original symbol
+      spotData: {
+        ltp: item.ltp,
+        change: item.change,
+        changePercent: item.changePercent,
+        open: item.open,
+        high: item.high,
+        low: item.low,
+        close: item.close,
+        volume: item.volume,
+        timestamp: item.timestamp
+      }
+    }));
+  }
+
+  // Start intelligent fetching for all symbols
+  static async startIntelligentFetchingAll() {
+    if (this.queueTimer) {
+      clearInterval(this.queueTimer);
+    }
+    // Fetch all symbols every 5 seconds
+    this.queueTimer = setInterval(async () => {
+      try {
+        const symbols = await this.loadAllSymbols();
+        const allData = await this.fetchMarketData(symbols);
+        allData.forEach(item => {
+          this.marketDataCache.set(item.symbol, {
+            ...item,
+            indexName: item.indexName || item.symbol || item.name,
+            dataType: 'all',
+            lastUpdated: Date.now()
+          });
+        });
+        this.notifyDataUpdate();
+      } catch (error) {
+        console.error('❌ Error in periodic ALL market data fetch:', error);
+      }
+    }, 5000);
   }
 
   // Get formatted market time
@@ -563,7 +773,15 @@ class MarketService {
         return [];
       }
       
+      console.log('[MarketService] Fetching market data for symbols:', symbols);
       const response = await api.post('/market/data/batch', { symbols });
+      console.log('[MarketService] Received market data response:', response.data.data.length, 'symbols');
+      
+      // Debug: log first few symbols to see what we're getting
+      if (response.data.data.length > 0) {
+        console.log('[MarketService] First 3 symbols received:', response.data.data.slice(0, 3).map(s => ({ symbol: s.symbol, ltp: s.ltp })));
+      }
+      
       return response.data.data;
     } catch (error) {
       console.error('[MarketService] Error fetching market data:', error);

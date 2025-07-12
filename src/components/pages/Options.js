@@ -8,9 +8,12 @@ import TradeLog from '../dashboard/TradeLog';
 import MaintenanceOverlay from '../common/MaintenanceOverlay';
 import TokenExpirationModal from '../common/TokenExpirationModal';
 import ToastContainer from '../common/ToastContainer';
+import SymbolSettingsModal from '../dashboard/SymbolSettingsModal';
 import FyersService from '../../services/fyersService';
 import MarketService from '../../services/marketService';
 import api, { setTokenExpirationHandler } from '../../services/api';
+import { Settings } from 'lucide-react';
+import SymbolConfigService from '../../services/symbolConfigService';
 
 const Options = () => {
   const { user } = useAuth();
@@ -21,6 +24,16 @@ const Options = () => {
   const [loading, setLoading] = useState(true);
   const [maintenanceOverlayVisible, setMaintenanceOverlayVisible] = useState(false);
   const [maintenanceStatus, setMaintenanceStatus] = useState('inactive');
+  const [marketTab, setMarketTab] = useState('index'); // 'index', 'stock', 'commodity'
+  const [allMarketData, setAllMarketData] = useState([]);
+  const [symbolSettingsModalOpen, setSymbolSettingsModalOpen] = useState(false);
+  const [symbolConfigs, setSymbolConfigs] = useState([]);
+  
+  // Debug effect to track symbol configs changes
+  useEffect(() => {
+    console.log('🔍 Symbol configs changed:', symbolConfigs);
+  }, [symbolConfigs]);
+  const [symbolsLoading, setSymbolsLoading] = useState(true);
   
   // Header status for trading interface
   const [headerStatus, setHeaderStatus] = useState({
@@ -76,26 +89,49 @@ const Options = () => {
     };
   }, []);
 
-  // Load market data when component mounts and when Fyers status changes
+  // Load and stream all market data (indices, stocks, commodities)
   useEffect(() => {
-    const unsubscribe = MarketService.subscribeToUpdates((updatedData) => {
-      console.log('[Options] Received market data update:', updatedData);
-      setIndicesData(updatedData);
-    });
-    
-    // Always load market data regardless of Fyers connection status
-    loadMarketData();
-
-    return () => {
-      if (unsubscribe) {
-        unsubscribe();
+    let isMounted = true;
+    setLoading(true);
+    // Initial load
+    MarketService.getAllMarketData().then(data => {
+      if (isMounted) {
+        setAllMarketData(data);
+        setLoading(false);
       }
+    });
+    // Subscribe to updates
+    const unsubscribe = MarketService.subscribeToUpdates((updatedData) => {
+      if (isMounted) setAllMarketData(updatedData);
+    });
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
     };
   }, [fyersStatus.connected]);
+
+  // Load symbol configurations
+  const loadSymbolConfigs = async () => {
+    try {
+      setSymbolsLoading(true);
+      console.log('Loading symbol configs...');
+      const symbols = await SymbolConfigService.getAllSymbols();
+      console.log('Loaded symbol configs:', symbols);
+      setSymbolConfigs(symbols);
+    } catch (error) {
+      console.error('Error loading symbol configs:', error);
+      // Fallback to empty array
+      setSymbolConfigs([]);
+    } finally {
+      setSymbolsLoading(false);
+    }
+  };
 
   // Load options data
   const loadOptionsData = async () => {
     try {
+      console.log('🔄 Starting loadOptionsData...');
+      
       // Load Fyers status
       try {
         const fyersData = await FyersService.getConnectionStatus();
@@ -104,11 +140,18 @@ const Options = () => {
         // Don't update state on error to keep existing state
       }
 
+      // Load symbol configurations
+      console.log('📊 Loading symbol configs...');
+      await loadSymbolConfigs();
+
       // Load market data
+      console.log('📈 Loading market data...');
       await loadMarketData();
 
+      console.log('✅ loadOptionsData completed');
       setLoading(false);
     } catch (error) {
+      console.error('❌ Error in loadOptionsData:', error);
       setLoading(false);
     }
   };
@@ -116,7 +159,9 @@ const Options = () => {
   // Load market data regardless of Fyers connection status
   const loadMarketData = async () => {
     try {
+      console.log('📈 loadMarketData: Getting indices data...');
       const marketData = await MarketService.getIndicesData();
+      console.log('📈 loadMarketData: Received market data:', marketData);
       setIndicesData(marketData);
     } catch (error) {
       console.error('Failed to load market data:', error);
@@ -198,33 +243,91 @@ const Options = () => {
     loadOptionsData();
   };
 
+  // Helper: get all symbols by type
+  const tabSymbols = SymbolConfigService.getSymbolsByType(symbolConfigs);
+
+  // Helper: get market data for a symbol (from allMarketData)
+  const getMarketData = (symbol) => {
+    // Try to find by indexName, symbol, or name
+    return allMarketData.find(d => d.indexName === symbol.symbolName || d.symbol === symbol.symbolName || d.indexName === symbol.symbolInput) || {
+      indexName: symbol.symbolName,
+      spotData: { ltp: null, change: null, changePercent: null }
+    };
+  };
+
+  // Convert symbol configs to the format expected by TradingInterface
+  const getTradingInterfaceConfigs = () => {
+    console.log('[Options] Creating TradingInterface configs from symbolConfigs:', symbolConfigs);
+    const configs = symbolConfigs.reduce((acc, symbol) => {
+      acc[symbol.symbolName] = {
+        name: symbol.symbolName,
+        symbolInput: symbol.symbolInput, // Add symbolInput for market data lookup
+        lotSize: symbol.strikeInterval || 50, // Use strike interval as lot size
+        defaultTarget: 40, // Default values
+        defaultStopLoss: 10,
+        exchange: symbol.tabType === 'index' ? 'NSE' : symbol.tabType === 'commodity' ? 'MCX' : 'NSE',
+        type: symbol.tabType,
+        optionSymbolFormat: symbol.optionSymbolFormat,
+        nextExpiry: symbol.nextExpiry,
+        expiryDate: symbol.expiryDate,
+        strikeInterval: symbol.strikeInterval
+      };
+      return acc;
+    }, {});
+    console.log('[Options] Generated TradingInterface configs:', configs);
+    return configs;
+  };
+
   return (
     <>
       <main className="flex-1">
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6">
-          {/* Index Cards */}
+          {/* Index Cards Section with Tabs */}
           {fyersStatus.connected ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              {indicesData.map((indexData, idx) => (
-                <IndexCard 
-                  key={indexData.indexName || idx} 
-                  data={indexData} 
-                  loading={loading}
-                  index={idx}
-                  compact={true}
-                />
-              ))}
-              {indicesData.length === 0 && !loading && (
-                <div className="col-span-full text-center py-12">
-                  <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-white font-semibold mb-2">No Market Data</h3>
-                  <p className="text-slate-400 text-sm">Market data will appear here when available</p>
+            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6 mt-6">
+              {/* Tabs */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex gap-2">
+                  <button
+                    className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${marketTab === 'index' ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    onClick={() => setMarketTab('index')}
+                  >
+                    Indices
+                  </button>
+                  <button
+                    className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${marketTab === 'stock' ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    onClick={() => setMarketTab('stock')}
+                  >
+                    Stocks
+                  </button>
+                  <button
+                    className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${marketTab === 'commodity' ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    onClick={() => setMarketTab('commodity')}
+                  >
+                    Commodities
+                  </button>
                 </div>
-              )}
+                <button
+                  onClick={() => setSymbolSettingsModalOpen(true)}
+                  className="p-2 text-slate-400 hover:text-brand transition-colors"
+                  title="Symbol Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              </div>
+              {/* Cards Grid - always 5 columns, no max-width on card */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {tabSymbols[marketTab].map((symbol, idx) => (
+                  <div key={symbol.symbolName || symbol.name || idx} className="w-full">
+                    <IndexCard
+                      data={getMarketData(symbol)}
+                      loading={loading}
+                      index={idx}
+                      mini
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="text-center py-12">
@@ -257,8 +360,9 @@ const Options = () => {
                 headerStatus={headerStatus}
                 onStatusUpdate={handleStatusUpdate}
                 onTradeLog={handleTradeLog}
-                indicesData={indicesData}
+                indicesData={allMarketData}
                 onMonitoringUpdate={handleMonitoringUpdate}
+                symbolConfigs={getTradingInterfaceConfigs()}
               />
 
               {/* Monitoring Dashboard - Shows Waiting for Trade & Active Positions */}
@@ -293,6 +397,17 @@ const Options = () => {
         isOpen={tokenExpirationModalOpen}
         onClose={() => setTokenExpirationModalOpen(false)}
         onTokenRefreshed={handleTokenRefreshed}
+      />
+
+      {/* Symbol Settings Modal */}
+      <SymbolSettingsModal
+        isOpen={symbolSettingsModalOpen}
+        onClose={() => setSymbolSettingsModalOpen(false)}
+        onSymbolsUpdated={() => {
+          // Reload symbol configurations and market data when symbols are updated
+          loadSymbolConfigs();
+          loadOptionsData();
+        }}
       />
 
       {/* Toast Container */}
