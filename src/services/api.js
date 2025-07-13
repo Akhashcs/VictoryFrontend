@@ -10,7 +10,7 @@ export const setTokenExpirationHandler = (handler) => {
 // Force production URLs in production environment
 const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 const baseURL = isProduction 
-  ? 'https://victory-backend-tzbg.onrender.com/api'
+  ? 'https://victorybackend-7cue.onrender.com/api'
   : (process.env.REACT_APP_API_URL || 'http://localhost:5000/api');
 
 const api = axios.create({
@@ -190,7 +190,7 @@ export const connectWebSocket = (token) => {
   // Force production URLs in production environment
   const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
   const wsUrl = isProduction 
-    ? 'wss://victory-backend-tzbg.onrender.com'
+    ? 'wss://victorybackend-7cue.onrender.com'
     : (process.env.REACT_APP_WS_URL || 'ws://localhost:5000');
   console.log('🔌 Attempting to connect to WebSocket:', wsUrl);
   
