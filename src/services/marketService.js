@@ -828,6 +828,46 @@ class MarketService {
     }
   }
 
+  /**
+   * Ping server to wake it up if inactive
+   * @returns {Promise<boolean>} True if ping was successful
+   */
+  static async pingServer() {
+    try {
+      console.log('[MarketService] Pinging server to wake it up...');
+      const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+      const apiUrl = isProduction 
+        ? `${process.env.REACT_APP_API_URL}/api`
+        : (process.env.REACT_APP_API_URL || 'http://localhost:5000/api');
+      
+      // Try to ping the server with a timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(`${apiUrl}/ping`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        console.log('[MarketService] Server ping successful');
+        return true;
+      } else {
+        console.log('[MarketService] Server ping failed with status:', response.status);
+        return false;
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('[MarketService] Server ping timed out');
+      } else {
+        console.error('[MarketService] Server ping error:', error);
+      }
+      return false;
+    }
+  }
+
   // Cleanup method
   static cleanup() {
     this.stopIntelligentFetching();

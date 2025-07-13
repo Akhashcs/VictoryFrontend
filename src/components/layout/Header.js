@@ -107,10 +107,23 @@ const Header = () => {
     }
   };
 
-  // Manual refresh for server status with retry
+  // Manual refresh for server status with retry and ping
   const refreshServerStatus = async () => {
     try {
       setServerStatus('loading');
+      
+      // First, try to ping the server to wake it up if it's inactive
+      console.log('[Header] Attempting to ping server...');
+      const pingSuccess = await MarketService.pingServer();
+      
+      if (pingSuccess) {
+        console.log('[Header] Server ping successful, checking health...');
+        // Wait a moment for the server to fully wake up
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        console.log('[Header] Server ping failed, proceeding with health check...');
+      }
+      
       // Try up to 3 times with increasing delay
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -121,8 +134,8 @@ const Header = () => {
         } catch (error) {
           console.log(`[Header] Server check attempt ${attempt + 1} failed:`, error);
           if (attempt < 2) {
-            // Wait before retrying (500ms, then 1000ms)
-            await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+            // Wait before retrying (1000ms, then 2000ms)
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
           }
         }
       }
