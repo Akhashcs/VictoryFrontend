@@ -5,7 +5,13 @@ import {
   Play, 
   Download,
   Clock,
-  Calendar
+  Calendar,
+  Target,
+  Shield,
+  Settings,
+  BarChart3,
+  DollarSign,
+  Activity
 } from 'lucide-react';
 import SymbolConfigService from '../../services/symbolConfigService';
 import { HMAService } from '../../services/hmaService';
@@ -34,20 +40,12 @@ const StrategyMonitoringCard = ({ title, symbol, hmaConfig, quantity, targetPoin
           <span className="text-slate-400">Stop Loss:</span>
           <span className="text-red-400 font-medium">-{stopLossPoints} pts</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-slate-400">Status:</span>
-          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-            isMonitoring ? 'text-green-400 bg-green-900/20 border border-green-700/30' : 'text-slate-400 bg-slate-700/50'
-          }`}>
-            {isMonitoring ? 'MONITORING' : 'IDLE'}
-          </span>
-        </div>
       </div>
     </div>
   );
 };
 
-const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatusUpdate, onTradeLog, indicesData = [], onMonitoringUpdate, symbolConfigs = {} }) => {
+const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatusUpdate, onTradeLog, indicesData = [], onMonitoringUpdate, symbolConfigs = {}, symbolsLoading = false }) => {
   // Get the first available symbol as default, or use a fallback
   const defaultSymbol = Object.values(symbolConfigs)[0] || { symbolName: '', lotSize: 75, defaultTarget: 40, defaultStopLoss: 10 };
   
@@ -461,13 +459,24 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
     }
   };
 
+  const handleViewOptionChain = () => {
+    if (inputs.index.symbolName) {
+      window.open(`https://web.sensibull.com/option-chain?view=greeks&symbol=${inputs.index.symbolName}`, '_blank', 'noopener,noreferrer');
+    } else {
+      window.showToast('Please select an index first.', 'error');
+    }
+  };
+
   return (
     <div className="w-full">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Strategy Setup Card - 2/3 width (2 index cards) */}
         <div className="lg:col-span-2">
-          <div className="bg-slate-800/50 p-4 sm:p-8 rounded-lg border border-slate-700/50 shadow-md">
-            <h2 className="text-xl sm:text-2xl font-bold text-white mb-6">Strategy Setup</h2>
+          <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md">
+            <div className="flex items-center gap-2 mb-4">
+              <Settings className="w-5 h-5 text-brand" />
+              <h2 className="text-lg font-semibold text-white">Strategy Setup</h2>
+            </div>
             
             <div className="space-y-4 sm:space-y-6">
               {/* Row 1: Index Selection (50%) & Get Symbols button (25%) & View Option Chain button (25%) */}
@@ -480,18 +489,23 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       name="indexSelect"
                       value={inputs.index.symbolName}
                       onChange={(e) => handleIndexChange(e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      disabled={symbolsLoading}
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {Object.entries(symbolConfigs).map(([key, config]) => (
-                        <option key={key} value={key} className="text-white bg-slate-700">
-                          {config.name}
-                        </option>
-                      ))}
+                      {symbolsLoading ? (
+                        <option value="" className="text-white bg-slate-700">Loading symbols...</option>
+                      ) : (
+                        Object.entries(symbolConfigs).map(([key, config]) => (
+                          <option key={key} value={key} className="text-white bg-slate-700">
+                            {config.name}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
                   <button
                     onClick={generateSymbolsForIndex}
-                    disabled={isLoading}
+                    disabled={isLoading || symbolsLoading}
                     className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-blue-700 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 disabled:bg-blue-900 disabled:text-blue-200"
                   >
                     {isLoading ? (
@@ -512,18 +526,16 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     )}
                   </button>
                 </div>
-                <div className="sm:col-span-1 flex items-end">
+                <div className="sm:col-span-2 flex items-end gap-2">
                   <button
-                    onClick={() => window.open('https://web.sensibull.com/option-chain?view=greeks', '_blank', 'noopener,noreferrer')}
-                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-green-700 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
+                    onClick={handleViewOptionChain}
+                    disabled={!inputs.index.symbolName || symbolsLoading}
+                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-md transition-colors disabled:bg-slate-600 disabled:text-slate-400 flex items-center gap-1"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
+                    <Activity className="w-4 h-4" />
                     View Option Chain
                   </button>
                 </div>
-                <div className="sm:col-span-1"></div>
               </div>
 
               {/* Row 2: Buy/Sell Selector (25%), Product type (25%), Order Type (25%), Offline order (25%) */}
@@ -757,7 +769,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
               )}
 
               {/* Time Settings */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6 pt-6 border-t border-slate-700">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
                 <div>
                   {/* Empty space */}
                 </div>
@@ -768,21 +780,21 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row justify-end items-center gap-3 sm:gap-4 mt-6">
+            <div className="flex flex-col sm:flex-row justify-end items-center gap-2 sm:gap-3 mt-6">
                 <button 
                   onClick={getDetails} 
                   disabled={isLoading}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-transparent text-sm sm:text-base font-medium rounded-md text-white bg-brand hover:bg-brand-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-light disabled:bg-slate-600"
+                  className="px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 bg-brand/10 hover:bg-brand/20 text-brand-light disabled:bg-slate-700 disabled:text-slate-400"
                 >
-                  <Download className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <Download className="w-3 h-3" />
                   Get Details
                 </button>
                 <button 
                   onClick={handleStartMonitoring}
                   disabled={isLoading || (!inputs.ceSymbol && !inputs.peSymbol) || (inputs.ceSymbol && !ceHMA) || (inputs.peSymbol && !peHMA)}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 border border-transparent text-sm sm:text-base font-medium rounded-md text-slate-800 bg-green-400 hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400 disabled:bg-slate-600 disabled:text-slate-400"
+                  className="px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 bg-green-400/10 hover:bg-green-400/20 text-green-400 disabled:bg-slate-700 disabled:text-slate-400"
                 >
-                  <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <Play className="w-3 h-3" />
                   {isMonitoring ? 'Add to Monitoring' : 'Start Monitoring'}
                 </button>
               </div>
@@ -792,9 +804,12 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
         {/* CE & PE Details Cards - 1/3 width (1 index card) */}
         <div className="lg:col-span-1 flex flex-col gap-4 sm:gap-6 h-full" style={{height: '100%'}}>
             {/* CE Details */}
-            <div className="bg-slate-800/50 p-4 sm:p-8 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc(50% - 0.75rem)'}}>
-              <div className="flex items-center justify-between mb-3 sm:mb-4">
-                <h3 className="text-base sm:text-lg font-semibold text-white">CE Details</h3>
+            <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc(50% - 0.75rem)'}}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-green-400" />
+                  <h3 className="text-sm font-semibold text-white">CE Details</h3>
+                </div>
                 {!isMonitoring && isStreamingMarketDepth && (
                   <span className="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded-full">
                     Live
@@ -812,33 +827,56 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                 )}
               </div>
               <div className="flex-1 flex flex-col gap-2 justify-center">
-                <span className="text-slate-400 text-sm mb-1">Symbol</span>
-                <span className="text-white font-medium mb-2 text-sm">{inputs.ceSymbol || 'Not selected'}</span>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400">LTP / %</div>
-                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? `${ceDepth.ltp} / ${ceDepth.chp}%` : '--'}</div>
-                    <div className="text-xs text-slate-400">HMA 55</div>
-                    <div className="text-sm font-mono font-bold text-brand">{ceHMA ? `₹${ceHMA.toFixed(2)}` : '--'}</div>
-                    {/* Debug: {ceHMA ? `HMA: ${ceHMA}` : 'No HMA'} */}
-                    <div className="text-xs text-slate-400">ATP</div>
-                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? ceDepth.atp : '--'}</div>
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="w-3 h-3 text-slate-400" />
+                  <span className="text-xs text-slate-400">Symbol</span>
+                </div>
+                <span className="text-white font-medium mb-3 text-sm">{inputs.ceSymbol || 'Not selected'}</span>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1">
+                      <Activity className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">LTP / %</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? `${ceDepth.ltp} / ${ceDepth.chp}%` : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <BarChart3 className="w-3 h-3 text-brand" />
+                      <span className="text-xs text-slate-400">HMA 55</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-brand">{ceHMA ? `₹${ceHMA.toFixed(2)}` : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <Target className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">ATP</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? ceDepth.atp : '--'}</div>
                   </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400">Volume</div>
-                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? ceDepth.v : '--'}</div>
-                    <div className="text-xs text-slate-400">OI / OI Chg%</div>
-                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? `${ceDepth.oi} / ${ceDepth.oipercent ?? '--'}%` : '--'}</div>
-                    <div className="text-xs text-slate-400">IV</div>
-                    <div className="text-sm font-mono font-bold text-white">{ceDepth ? ceDepth.iv : '--'}</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1">
+                      <Activity className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">Volume</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? ceDepth.v : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <BarChart3 className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">OI / OI Chg%</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? `${ceDepth.oi} / ${ceDepth.oipercent ?? '--'}%` : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <Shield className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">IV</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? ceDepth.iv : '--'}</div>
                   </div>
                 </div>
               </div>
             </div>
             {/* PE Details */}
-            <div className="bg-slate-800/50 p-4 sm:p-8 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc(50% - 0.75rem)'}}>
-              <div className="flex items-center justify-between mb-3 sm:mb-4">
-                <h3 className="text-base sm:text-lg font-semibold text-white">PE Details</h3>
+            <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc(50% - 0.75rem)'}}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingDown className="w-4 h-4 text-red-400" />
+                  <h3 className="text-sm font-semibold text-white">PE Details</h3>
+                </div>
                 {!isMonitoring && isStreamingMarketDepth && (
                   <span className="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded-full">
                     Live
@@ -856,25 +894,45 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                 )}
               </div>
               <div className="flex-1 flex flex-col gap-2 justify-center">
-                <span className="text-slate-400 text-sm mb-1">Symbol</span>
-                <span className="text-white font-medium mb-2 text-sm">{inputs.peSymbol || 'Not selected'}</span>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400">LTP / %</div>
-                    <div className="text-sm font-mono font-bold text-white">{peDepth ? `${peDepth.ltp} / ${peDepth.chp}%` : '--'}</div>
-                    <div className="text-xs text-slate-400">HMA 55</div>
-                    <div className="text-sm font-mono font-bold text-brand">{peHMA ? `₹${peHMA.toFixed(2)}` : '--'}</div>
-                    {/* Debug: {peHMA ? `HMA: ${peHMA}` : 'No HMA'} */}
-                    <div className="text-xs text-slate-400">ATP</div>
-                    <div className="text-sm font-mono font-bold text-white">{peDepth ? peDepth.atp : '--'}</div>
+                <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="w-3 h-3 text-slate-400" />
+                  <span className="text-xs text-slate-400">Symbol</span>
+                </div>
+                <span className="text-white font-medium mb-3 text-sm">{inputs.peSymbol || 'Not selected'}</span>
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1">
+                      <Activity className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">LTP / %</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? `${peDepth.ltp} / ${peDepth.chp}%` : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <BarChart3 className="w-3 h-3 text-brand" />
+                      <span className="text-xs text-slate-400">HMA 55</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-brand">{peHMA ? `₹${peHMA.toFixed(2)}` : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <Target className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">ATP</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? peDepth.atp : '--'}</div>
                   </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400">Volume</div>
-                    <div className="text-sm font-mono font-bold text-white">{peDepth ? peDepth.v : '--'}</div>
-                    <div className="text-xs text-slate-400">OI / OI Chg%</div>
-                    <div className="text-sm font-mono font-bold text-white">{peDepth ? `${peDepth.oi} / ${peDepth.oipercent ?? '--'}%` : '--'}</div>
-                    <div className="text-xs text-slate-400">IV</div>
-                    <div className="text-sm font-mono font-bold text-white">{peDepth ? peDepth.iv : '--'}</div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1">
+                      <Activity className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">Volume</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? peDepth.v : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <BarChart3 className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">OI / OI Chg%</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? `${peDepth.oi} / ${peDepth.oipercent ?? '--'}%` : '--'}</div>
+                    <div className="flex items-center gap-1">
+                      <Shield className="w-3 h-3 text-slate-400" />
+                      <span className="text-xs text-slate-400">IV</span>
+                    </div>
+                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? peDepth.iv : '--'}</div>
                 </div>
               </div>
             </div>

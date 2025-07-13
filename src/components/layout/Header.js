@@ -153,19 +153,19 @@ const Header = () => {
   };
 
   return (
-    <header className="w-full bg-slate-800/60 backdrop-blur-lg border-b border-slate-700/50 py-3 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-50">
+    <header className="w-full bg-slate-800/60 backdrop-blur-lg border-b border-slate-700/50 py-2 px-3 sm:px-4 flex items-center justify-between sticky top-0 z-50">
       {/* Left: Logo and Title */}
-      <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex items-center gap-2">
-          <img src={logo} alt="Victory Logo" className="w-8 h-8 sm:w-9 sm:h-9" />
-          <span className="text-white font-bold text-xl sm:text-2xl tracking-tight">Victory</span>
+          <img src={logo} alt="Victory Logo" className="w-6 h-6 sm:w-7 sm:h-7" />
+          <span className="text-white font-bold text-lg sm:text-xl tracking-tight">Victory</span>
         </div>
-        <div className="hidden sm:block w-px h-7 bg-slate-600"></div>
+        <div className="hidden sm:block w-px h-6 bg-slate-600"></div>
         {/* Navigation (desktop only) */}
-        <nav className="hidden sm:flex space-x-4 ml-4">
+        <nav className="hidden sm:flex space-x-3 ml-3">
           <Link
             to="/options"
-            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            className={`px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
               location.pathname === '/options'
                 ? 'bg-slate-700 text-white'
                 : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -175,7 +175,7 @@ const Header = () => {
           </Link>
           <Link
             to="/backtest"
-            className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            className={`px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
               location.pathname === '/backtest'
                 ? 'bg-slate-700 text-white'
                 : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -188,11 +188,11 @@ const Header = () => {
       {/* Hamburger for mobile (extreme right) */}
       <div className="flex sm:hidden items-center ml-auto">
         <button
-          className="p-2 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 focus:outline-none"
+          className="p-1.5 rounded-md text-slate-300 hover:text-white hover:bg-slate-700 focus:outline-none"
           onClick={() => setMobileMenuOpen(true)}
           aria-label="Open menu"
         >
-          <MenuIcon className="w-6 h-6" />
+          <MenuIcon className="w-5 h-5" />
         </button>
       </div>
       {/* Mobile menu drawer */}
@@ -259,9 +259,9 @@ const Header = () => {
         </div>
       )}
       {/* Right side (status, notifications, fyers, etc.) */}
-      <div className="hidden sm:flex items-center gap-2 sm:gap-4 min-w-0">
+      <div className="hidden sm:flex items-center gap-2 min-w-0">
         {/* Status Indicators */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2">
           <StatusIndicator type="market" status={marketStatus} />
           <StatusIndicator type="server" status={serverStatus} onRefresh={refreshServerStatus} />
         </div>
@@ -272,12 +272,12 @@ const Header = () => {
               <>
                 <Menu.Button
                   onClick={handleFundsDropdownOpen}
-                  className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 bg-emerald-900/50 border border-emerald-700 rounded-lg text-emerald-300 text-xs sm:text-sm font-medium hover:bg-emerald-800/70 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 bg-emerald-900/50 border border-emerald-700 rounded-lg text-emerald-300 text-xs font-medium hover:bg-emerald-800/70 transition-colors"
                 >
-                  <DollarSign className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-400" />
+                  <DollarSign className="w-3 h-3 text-emerald-400" />
                   <span className="hidden sm:inline">{fyersStatus.profileName}</span>
                   <span className="sm:hidden">Funds</span>
-                  <ChevronDown className="w-3 h-3 sm:w-4 sm:h-4 text-emerald-300" />
+                  <ChevronDown className="w-3 h-3 text-emerald-300" />
                 </Menu.Button>
                 <Menu.Items className="absolute right-0 mt-2 w-80 origin-top-right bg-slate-800 border border-slate-700 rounded-lg shadow-lg z-50 focus:outline-none">
                   <div className="p-4">
@@ -334,7 +334,7 @@ const Header = () => {
         {!fyersStatus.connected && (
           <button
             onClick={() => setFyersModalOpen(true)}
-            className="bg-brand hover:bg-brand-dark text-white font-semibold text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-lg transition-colors"
+            className="bg-brand hover:bg-brand-dark text-white font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors"
           >
             <span className="hidden sm:inline">Connect to Fyers</span>
             <span className="sm:hidden">Connect</span>

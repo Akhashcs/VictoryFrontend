@@ -287,21 +287,33 @@ const Options = () => {
             <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6 mt-6">
               {/* Tabs */}
               <div className="flex items-center justify-between mb-4">
-                <div className="flex gap-2">
+                <div className="flex gap-6">
                   <button
-                    className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${marketTab === 'index' ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    className={`font-medium text-sm transition-colors border-b-2 ${
+                      marketTab === 'index' 
+                        ? 'text-brand border-brand' 
+                        : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
+                    }`}
                     onClick={() => setMarketTab('index')}
                   >
                     Indices
                   </button>
                   <button
-                    className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${marketTab === 'stock' ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    className={`font-medium text-sm transition-colors border-b-2 ${
+                      marketTab === 'stock' 
+                        ? 'text-brand border-brand' 
+                        : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
+                    }`}
                     onClick={() => setMarketTab('stock')}
                   >
                     Stocks
                   </button>
                   <button
-                    className={`px-4 py-2 rounded-md font-semibold text-sm transition-colors ${marketTab === 'commodity' ? 'bg-brand text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                    className={`font-medium text-sm transition-colors border-b-2 ${
+                      marketTab === 'commodity' 
+                        ? 'text-brand border-brand' 
+                        : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
+                    }`}
                     onClick={() => setMarketTab('commodity')}
                   >
                     Commodities
@@ -363,6 +375,7 @@ const Options = () => {
                 indicesData={allMarketData}
                 onMonitoringUpdate={handleMonitoringUpdate}
                 symbolConfigs={getTradingInterfaceConfigs()}
+                symbolsLoading={symbolsLoading}
               />
 
               {/* Monitoring Dashboard - Shows Waiting for Trade & Active Positions */}

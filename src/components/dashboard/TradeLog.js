@@ -14,6 +14,8 @@ const TradeLog = () => {
   const [logs, setLogs] = useState([]);
   const [showAll, setShowAll] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [sourceType, setSourceType] = useState('FYERS'); // Default to FYERS
+  const [filteredLogs, setFilteredLogs] = useState([]);
   
   // Safely get user from auth context
   let user = null;
@@ -43,6 +45,15 @@ const TradeLog = () => {
       isMounted = false;
     };
   }, []);
+
+  // Filter logs based on source type
+  useEffect(() => {
+    let filtered = [...logs];
+    if (sourceType !== 'ALL') {
+      filtered = filtered.filter(log => log.details?.source === sourceType);
+    }
+    setFilteredLogs(filtered);
+  }, [logs, sourceType]);
 
   // Listen for real-time trade log updates via WebSocket
   useEffect(() => {
@@ -135,6 +146,15 @@ const TradeLog = () => {
           Trade Logs
         </h3>
         <div className="flex items-center gap-2">
+          <select
+            value={sourceType}
+            onChange={e => setSourceType(e.target.value)}
+            className="px-3 py-1.5 rounded-md bg-slate-700 border border-slate-600 text-white text-xs focus:outline-none focus:ring-2 focus:ring-brand"
+          >
+            <option value="FYERS">Fyers Only</option>
+            <option value="ALL">All Sources</option>
+            <option value="APP">App Only</option>
+          </select>
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
@@ -156,7 +176,7 @@ const TradeLog = () => {
           </button>
         </div>
       </div>
-      <TradeLogTable logs={logs} />
+      <TradeLogTable logs={filteredLogs} />
       {showAll && <AllTradesModal onClose={() => setShowAll(false)} deduplicateLogs={deduplicateLogs} />}
     </div>
   );
