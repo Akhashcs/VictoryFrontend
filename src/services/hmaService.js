@@ -6,7 +6,7 @@ import api from './api';
 // Force production URLs in production environment
 const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 const API_BASE_URL = isProduction 
-  ? 'https://victorybackend-7cue.onrender.com/api'
+  ? `${process.env.REACT_APP_API_URL}/api`
   : (process.env.REACT_APP_API_URL || 'http://localhost:5000/api'); // Fixed API URL path
 
 let fyersAccessToken = null;

@@ -809,7 +809,7 @@ class MarketService {
       // Use direct fetch to bypass axios instance - Fixed API URL path
       const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
       const apiUrl = isProduction 
-        ? 'https://victorybackend-7cue.onrender.com/api'
+        ? `${process.env.REACT_APP_API_URL}/api`
         : (process.env.REACT_APP_API_URL || 'http://localhost:5000/api');
       const response = await fetch(`${apiUrl}/health`);
       
