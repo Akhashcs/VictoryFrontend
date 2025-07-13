@@ -284,10 +284,10 @@ const Options = () => {
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6">
           {/* Index Cards Section with Tabs */}
           {fyersStatus.connected ? (
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6 mt-6">
+            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-3 sm:p-4 mb-4 mt-4" style={{ marginTop: '1rem', marginBottom: '1rem' }}>
               {/* Tabs */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex gap-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex gap-4 sm:gap-6">
                   <button
                     className={`font-medium text-sm transition-colors border-b-2 ${
                       marketTab === 'index' 
@@ -321,10 +321,10 @@ const Options = () => {
                 </div>
                 <button
                   onClick={() => setSymbolSettingsModalOpen(true)}
-                  className="p-2 text-slate-400 hover:text-brand transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-brand transition-colors"
                   title="Symbol Settings"
                 >
-                  <Settings className="w-5 h-5" />
+                  <Settings className="w-4 h-4" />
                 </button>
               </div>
               {/* Cards Grid - always 5 columns, no max-width on card */}
@@ -379,14 +379,10 @@ const Options = () => {
               />
 
               {/* Monitoring Dashboard - Shows Waiting for Trade & Active Positions */}
-              <div className="mt-6 sm:mt-8">
-                <MonitoringDashboard onTradeLog={handleTradeLog} />
-              </div>
+              <MonitoringDashboard onTradeLog={handleTradeLog} />
 
               {/* Trade Log - Below Monitoring Dashboard */}
-              <div className="mb-6 sm:mb-8">
-                <TradeLog />
-              </div>
+              <TradeLog />
             </>
           )}
         </div>

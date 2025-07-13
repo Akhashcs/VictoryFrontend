@@ -460,37 +460,34 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
   };
 
   const handleViewOptionChain = () => {
-    if (inputs.index.symbolName) {
-      window.open(`https://web.sensibull.com/option-chain?view=greeks&symbol=${inputs.index.symbolName}`, '_blank', 'noopener,noreferrer');
-    } else {
-      window.showToast('Please select an index first.', 'error');
-    }
+    const symbol = inputs.index.symbolName || 'NIFTY';
+    window.open(`https://web.sensibull.com/option-chain?view=greeks&symbol=${symbol}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div className="w-full">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+    <div className="w-full mb-4" style={{ marginBottom: '1rem' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Strategy Setup Card - 2/3 width (2 index cards) */}
         <div className="lg:col-span-2">
-          <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md">
-            <div className="flex items-center gap-2 mb-4">
-              <Settings className="w-5 h-5 text-brand" />
-              <h2 className="text-lg font-semibold text-white">Strategy Setup</h2>
+          <div className="bg-slate-800/50 p-3 sm:p-4 rounded-lg border border-slate-700/50 shadow-md">
+            <div className="flex items-center gap-2 mb-3">
+              <Settings className="w-4 h-4 text-brand" />
+              <h2 className="text-base font-semibold text-white">Strategy Setup</h2>
             </div>
             
-            <div className="space-y-4 sm:space-y-6">
+            <div className="space-y-3 sm:space-y-4">
               {/* Row 1: Index Selection (50%) & Get Symbols button (25%) & View Option Chain button (25%) */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="sm:col-span-2 flex items-end gap-2">
                   <div className="flex-1">
-                    <label htmlFor="index-select" className="text-sm font-medium text-slate-400">Index</label>
+                    <label htmlFor="index-select" className="text-xs font-medium text-slate-400">Index</label>
                     <select
                       id="index-select"
                       name="indexSelect"
                       value={inputs.index.symbolName}
                       onChange={(e) => handleIndexChange(e.target.value)}
                       disabled={symbolsLoading}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {symbolsLoading ? (
                         <option value="" className="text-white bg-slate-700">Loading symbols...</option>
@@ -506,11 +503,11 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                   <button
                     onClick={generateSymbolsForIndex}
                     disabled={isLoading || symbolsLoading}
-                    className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-blue-700 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 disabled:bg-blue-900 disabled:text-blue-200"
+                    className="inline-flex items-center justify-center gap-1 px-2 py-1.5 border border-blue-700 text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 disabled:bg-blue-900 disabled:text-blue-200 h-8"
                   >
                     {isLoading ? (
                       <>
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin -ml-1 mr-1 h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -518,7 +515,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       </>
                     ) : (
                       <>
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         Get Symbols
@@ -529,25 +526,24 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                 <div className="sm:col-span-2 flex items-end gap-2">
                   <button
                     onClick={handleViewOptionChain}
-                    disabled={!inputs.index.symbolName || symbolsLoading}
-                    className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium rounded-md transition-colors disabled:bg-slate-600 disabled:text-slate-400 flex items-center gap-1"
+                    className="px-2 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium rounded-md transition-colors flex items-center gap-1 h-8"
                   >
-                    <Activity className="w-4 h-4" />
+                    <Activity className="w-3 h-3" />
                     View Option Chain
                   </button>
                 </div>
               </div>
 
               {/* Row 2: Buy/Sell Selector (25%), Product type (25%), Order Type (25%), Offline order (25%) */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div>
-                  <label htmlFor="trade-direction" className="text-sm font-medium text-slate-400">Trade Direction</label>
+                  <label htmlFor="trade-direction" className="text-xs font-medium text-slate-400">Trade Direction</label>
                     <select
                     id="trade-direction"
                     name="tradeDirection"
                     value={inputs.tradeDirection}
                     onChange={(e) => handleInputChange('tradeDirection', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     >
                     <option value="BUY">BUY</option>
                     <option value="SELL">SELL</option>
@@ -555,13 +551,13 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                   </div>
                 
                   <div>
-                    <label htmlFor="product-type" className="text-sm font-medium text-slate-400">Product Type</label>
+                    <label htmlFor="product-type" className="text-xs font-medium text-slate-400">Product Type</label>
                     <select
                       id="product-type"
                       name="productType"
                       value={inputs.productType}
                       onChange={(e) => handleInputChange('productType', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     >
                     <option value="INTRADAY">INTRADAY</option>
                     <option value="CNC">CNC</option>
@@ -569,42 +565,42 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                   </div>
                 
                   <div>
-                    <label htmlFor="order-type" className="text-sm font-medium text-slate-400">Order Type</label>
+                    <label htmlFor="order-type" className="text-xs font-medium text-slate-400">Order Type</label>
                     <select
                       id="order-type"
                       name="orderType"
                       value={inputs.orderType}
                       onChange={(e) => handleInputChange('orderType', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     >
                     <option value="MARKET">MARKET</option>
                     <option value="LIMIT">LIMIT</option>
                     </select>
                   </div>
                 
-                <div className="flex items-center mt-6">
+                <div className="flex items-center mt-4">
                   <input
                     type="checkbox"
                     id="offline-order"
                     name="offlineOrder"
                     checked={inputs.offlineOrder}
                     onChange={(e) => handleInputChange('offlineOrder', e.target.checked)}
-                    className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
+                    className="h-3 w-3 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
                   />
-                  <label htmlFor="offline-order" className="text-sm text-slate-300 cursor-pointer">Offline Order</label>
+                  <label htmlFor="offline-order" className="text-xs text-slate-300 cursor-pointer">Offline Order</label>
                 </div>
               </div>
 
               {/* Row 3: CE & PE selector with lots */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-3">
                   <div className="sm:col-span-1 lg:col-span-3">
-                    <label htmlFor="ce-option" className="text-sm font-medium text-slate-400">CE Option</label>
+                    <label htmlFor="ce-option" className="text-xs font-medium text-slate-400">CE Option</label>
                     <select
                       id="ce-option"
                       name="ceOptionType"
                       value={inputs.ceSymbol}
                       onChange={(e) => handleInputChange('ceSymbol', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     >
                       <option value="">Select CE</option>
                       {strikeSymbols.ce.map((s, i) => (
@@ -615,7 +611,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     </select>
                   </div>
                   <div className="sm:col-span-1">
-                    <label htmlFor="ce-lots" className="text-sm font-medium text-slate-400">CE Lots</label>
+                    <label htmlFor="ce-lots" className="text-xs font-medium text-slate-400">CE Lots</label>
                     <input
                       type="number"
                       id="ce-lots"
@@ -624,20 +620,20 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       step="1"
                       value={inputs.ceLots}
                       onChange={(e) => handleInputChange('ceLots', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     />
                     <p className="text-xs text-slate-500 mt-1">
                       Qty: {inputs.index.lotSize || 1}/lot
                     </p>
                   </div>
                   <div className="sm:col-span-1 lg:col-span-3">
-                    <label htmlFor="pe-option" className="text-sm font-medium text-slate-400">PE Option</label>
+                    <label htmlFor="pe-option" className="text-xs font-medium text-slate-400">PE Option</label>
                     <select
                       id="pe-option"
                       name="peOptionType"
                       value={inputs.peSymbol}
                       onChange={(e) => handleInputChange('peSymbol', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     >
                       <option value="">Select PE</option>
                       {strikeSymbols.pe.map((s, i) => (
@@ -648,7 +644,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     </select>
                   </div>
                   <div className="sm:col-span-1">
-                    <label htmlFor="pe-lots" className="text-sm font-medium text-slate-400">PE Lots</label>
+                    <label htmlFor="pe-lots" className="text-xs font-medium text-slate-400">PE Lots</label>
                     <input
                       type="number"
                       id="pe-lots"
@@ -657,7 +653,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       step="1"
                       value={inputs.peLots}
                       onChange={(e) => handleInputChange('peLots', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     />
                     <p className="text-xs text-slate-500 mt-1">
                       Qty: {inputs.index.lotSize || 1}/lot
@@ -666,27 +662,27 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                 </div>
 
               {/* Row 4: Target (25%), Stop Loss (25%), Max Re-entries (25%), Empty (25%) */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
-                    <label htmlFor="target-points" className="text-sm font-medium text-slate-400">Target (Pts)</label>
+                    <label htmlFor="target-points" className="text-xs font-medium text-slate-400">Target (Pts)</label>
                     <input
                       type="number"
                       id="target-points"
                       name="targetPoints"
                       value={inputs.targetPoints}
                       onChange={(e) => handleInputChange('targetPoints', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     />
                   </div>
                   <div>
-                    <label htmlFor="stoploss-points" className="text-sm font-medium text-slate-400">Stop Loss (Pts)</label>
+                    <label htmlFor="stoploss-points" className="text-xs font-medium text-slate-400">Stop Loss (Pts)</label>
                     <input
                       type="number"
                       id="stoploss-points"
                       name="stopLossPoints"
                       value={inputs.stopLossPoints}
                       onChange={(e) => handleInputChange('stopLossPoints', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     />
                   </div>
                   <div>
@@ -698,7 +694,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
               </div>
 
               {/* Row 5: Trailing stoploss switch (25%), Trail stoploss to entry switch (25%), Empty (50%) */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="flex items-center">
                   <input
                     type="checkbox"
@@ -706,9 +702,9 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     name="useTrailingStoploss"
                     checked={inputs.useTrailingStoploss}
                     onChange={(e) => handleInputChange('useTrailingStoploss', e.target.checked)}
-                    className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
+                    className="h-3 w-3 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
                   />
-                  <label htmlFor="use-trailing-sl" className="text-sm text-slate-300 cursor-pointer">Trailing Stoploss</label>
+                  <label htmlFor="use-trailing-sl" className="text-xs text-slate-300 cursor-pointer">Trailing Stoploss</label>
                 </div>
                 
                 <div className="flex items-center">
@@ -717,9 +713,9 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     name="trailSlToCost"
                     checked={inputs.trailSlToCost}
                     onChange={(e) => handleInputChange('trailSlToCost', e.target.checked)}
-                    className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
+                    className="h-3 w-3 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
                   />
-                  <label className="text-sm text-slate-300 cursor-pointer">Trail SL to Entry</label>
+                  <label className="text-xs text-slate-300 cursor-pointer">Trail SL to Entry</label>
                 </div>
                 
                 <div className="sm:col-span-2">
@@ -729,47 +725,37 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
 
               {/* Row 6: When trailing stoploss is enabled - Price movement (25%), SL Movement (25%), Trail stoploss to entry (25%), Empty (25%) */}
               {inputs.useTrailingStoploss && (
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
-                    <label htmlFor="trailing-x" className="text-sm font-medium text-slate-400">Price Movement (Pts)</label>
+                    <label htmlFor="trailing-x" className="text-xs font-medium text-slate-400">Price Movement (X)</label>
                     <input
                       type="number"
                       id="trailing-x"
                       name="trailingX"
                       value={inputs.trailingX}
                       onChange={(e) => handleInputChange('trailingX', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     />
                   </div>
                   <div>
-                    <label htmlFor="trailing-y" className="text-sm font-medium text-slate-400">SL Movement (Pts)</label>
+                    <label htmlFor="trailing-y" className="text-xs font-medium text-slate-400">SL Movement (Y)</label>
                     <input
                       type="number"
                       id="trailing-y"
                       name="trailingY"
                       value={inputs.trailingY}
                       onChange={(e) => handleInputChange('trailingY', e.target.value)}
-                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-sm"
+                      className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs"
                     />
                   </div>
-                  <div className="flex items-center mt-6">
-                    <input
-                      type="checkbox"
-                      name="trailSlToCost"
-                      checked={inputs.trailSlToCost}
-                      onChange={(e) => handleInputChange('trailSlToCost', e.target.checked)}
-                      className="h-4 w-4 text-brand bg-slate-700 border-slate-600 rounded focus:ring-brand mr-2"
-                    />
-                    <label className="text-sm text-slate-300 cursor-pointer">Trail SL to Entry</label>
-                  </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     {/* Empty space */}
                   </div>
                 </div>
               )}
 
               {/* Time Settings */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
                 <div>
                   {/* Empty space */}
                 </div>
@@ -780,11 +766,11 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
             </div>
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row justify-end items-center gap-2 sm:gap-3 mt-6">
+            <div className="flex flex-col sm:flex-row justify-end items-center gap-2 sm:gap-3 mt-4">
                 <button 
                   onClick={getDetails} 
                   disabled={isLoading}
-                  className="px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 bg-brand/10 hover:bg-brand/20 text-brand-light disabled:bg-slate-700 disabled:text-slate-400"
+                  className="px-2 py-1 rounded-md transition-colors text-xs font-bold flex items-center gap-1 bg-brand/10 hover:bg-brand/20 text-brand-light disabled:bg-slate-700 disabled:text-slate-400"
                 >
                   <Download className="w-3 h-3" />
                   Get Details
@@ -792,7 +778,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                 <button 
                   onClick={handleStartMonitoring}
                   disabled={isLoading || (!inputs.ceSymbol && !inputs.peSymbol) || (inputs.ceSymbol && !ceHMA) || (inputs.peSymbol && !peHMA)}
-                  className="px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 bg-green-400/10 hover:bg-green-400/20 text-green-400 disabled:bg-slate-700 disabled:text-slate-400"
+                  className="px-2 py-1 rounded-md transition-colors text-xs font-bold flex items-center gap-1 bg-green-400/10 hover:bg-green-400/20 text-green-400 disabled:bg-slate-700 disabled:text-slate-400"
                 >
                   <Play className="w-3 h-3" />
                   {isMonitoring ? 'Add to Monitoring' : 'Start Monitoring'}
@@ -802,137 +788,137 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
           </div>
 
         {/* CE & PE Details Cards - 1/3 width (1 index card) */}
-        <div className="lg:col-span-1 flex flex-col gap-4 sm:gap-6 h-full" style={{height: '100%'}}>
+        <div className="lg:col-span-1 flex flex-col gap-3 sm:gap-4 h-full" style={{height: '100%'}}>
             {/* CE Details */}
-            <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc(50% - 0.75rem)'}}>
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-slate-800/50 p-3 sm:p-4 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc((482px - 1rem) / 2)'}}>
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-green-400" />
-                  <h3 className="text-sm font-semibold text-white">CE Details</h3>
+                  <TrendingUp className="w-3 h-3 text-green-400" />
+                  <h3 className="text-xs font-semibold text-white">CE Details</h3>
                 </div>
                 {!isMonitoring && isStreamingMarketDepth && (
-                  <span className="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded-full">
+                  <span className="text-xs text-green-400 bg-green-900/20 px-1.5 py-0.5 rounded-full">
                     Live
                   </span>
                 )}
                 {isMonitoring && !isStreamingMarketDepth && (
-                  <span className="text-xs text-slate-400 bg-slate-900/20 px-2 py-1 rounded-full">
+                  <span className="text-xs text-slate-400 bg-slate-900/20 px-1.5 py-0.5 rounded-full">
                     Monitoring
                   </span>
                 )}
                 {isMonitoring && isStreamingMarketDepth && (
-                  <span className="text-xs text-blue-400 bg-blue-900/20 px-2 py-1 rounded-full">
+                  <span className="text-xs text-blue-400 bg-blue-900/20 px-1.5 py-0.5 rounded-full">
                     Preview
                   </span>
                 )}
               </div>
-              <div className="flex-1 flex flex-col gap-2 justify-center">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-3 h-3 text-slate-400" />
+              <div className="flex-1 flex flex-col gap-1 justify-center">
+                <div className="flex items-center gap-1 mb-1">
+                  <DollarSign className="w-2.5 h-2.5 text-slate-400" />
                   <span className="text-xs text-slate-400">Symbol</span>
                 </div>
-                <span className="text-white font-medium mb-3 text-sm">{inputs.ceSymbol || 'Not selected'}</span>
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <div className="space-y-2">
+                <span className="text-white font-medium mb-2 text-xs">{inputs.ceSymbol || 'Not selected'}</span>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <Activity className="w-3 h-3 text-slate-400" />
+                      <Activity className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">LTP / %</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? `${ceDepth.ltp} / ${ceDepth.chp}%` : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{ceDepth ? `${ceDepth.ltp} / ${ceDepth.chp}%` : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <BarChart3 className="w-3 h-3 text-brand" />
+                      <BarChart3 className="w-2.5 h-2.5 text-brand" />
                       <span className="text-xs text-slate-400">HMA 55</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-brand">{ceHMA ? `₹${ceHMA.toFixed(2)}` : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-brand">{ceHMA ? `₹${ceHMA.toFixed(2)}` : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <Target className="w-3 h-3 text-slate-400" />
+                      <Target className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">ATP</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? ceDepth.atp : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{ceDepth ? ceDepth.atp : '--'}</div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <Activity className="w-3 h-3 text-slate-400" />
+                      <Activity className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">Volume</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? ceDepth.v : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{ceDepth ? ceDepth.v : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <BarChart3 className="w-3 h-3 text-slate-400" />
+                      <BarChart3 className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">OI / OI Chg%</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? `${ceDepth.oi} / ${ceDepth.oipercent ?? '--'}%` : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{ceDepth ? `${ceDepth.oi} / ${ceDepth.oipercent ?? '--'}%` : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <Shield className="w-3 h-3 text-slate-400" />
+                      <Shield className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">IV</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{ceDepth ? ceDepth.iv : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{ceDepth ? ceDepth.iv : '--'}</div>
                   </div>
                 </div>
               </div>
             </div>
             {/* PE Details */}
-            <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc(50% - 0.75rem)'}}>
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-slate-800/50 p-3 sm:p-4 rounded-lg border border-slate-700/50 shadow-md flex flex-col" style={{height: 'calc((482px - 1rem) / 2)'}}>
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <TrendingDown className="w-4 h-4 text-red-400" />
-                  <h3 className="text-sm font-semibold text-white">PE Details</h3>
+                  <TrendingDown className="w-3 h-3 text-red-400" />
+                  <h3 className="text-xs font-semibold text-white">PE Details</h3>
                 </div>
                 {!isMonitoring && isStreamingMarketDepth && (
-                  <span className="text-xs text-green-400 bg-green-900/20 px-2 py-1 rounded-full">
+                  <span className="text-xs text-green-400 bg-green-900/20 px-1.5 py-0.5 rounded-full">
                     Live
                   </span>
                 )}
                 {isMonitoring && !isStreamingMarketDepth && (
-                  <span className="text-xs text-slate-400 bg-slate-900/20 px-2 py-1 rounded-full">
+                  <span className="text-xs text-slate-400 bg-slate-900/20 px-1.5 py-0.5 rounded-full">
                     Monitoring
                   </span>
                 )}
                 {isMonitoring && isStreamingMarketDepth && (
-                  <span className="text-xs text-blue-400 bg-blue-900/20 px-2 py-1 rounded-full">
+                  <span className="text-xs text-blue-400 bg-blue-900/20 px-1.5 py-0.5 rounded-full">
                     Preview
                   </span>
                 )}
               </div>
-              <div className="flex-1 flex flex-col gap-2 justify-center">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-3 h-3 text-slate-400" />
+              <div className="flex-1 flex flex-col gap-1 justify-center">
+                <div className="flex items-center gap-1 mb-1">
+                  <DollarSign className="w-2.5 h-2.5 text-slate-400" />
                   <span className="text-xs text-slate-400">Symbol</span>
                 </div>
-                <span className="text-white font-medium mb-3 text-sm">{inputs.peSymbol || 'Not selected'}</span>
-                <div className="grid grid-cols-2 gap-3 mt-2">
-                  <div className="space-y-2">
+                <span className="text-white font-medium mb-2 text-xs">{inputs.peSymbol || 'Not selected'}</span>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <Activity className="w-3 h-3 text-slate-400" />
+                      <Activity className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">LTP / %</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? `${peDepth.ltp} / ${peDepth.chp}%` : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{peDepth ? `${peDepth.ltp} / ${peDepth.chp}%` : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <BarChart3 className="w-3 h-3 text-brand" />
+                      <BarChart3 className="w-2.5 h-2.5 text-brand" />
                       <span className="text-xs text-slate-400">HMA 55</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-brand">{peHMA ? `₹${peHMA.toFixed(2)}` : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-brand">{peHMA ? `₹${peHMA.toFixed(2)}` : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <Target className="w-3 h-3 text-slate-400" />
+                      <Target className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">ATP</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? peDepth.atp : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{peDepth ? peDepth.atp : '--'}</div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <Activity className="w-3 h-3 text-slate-400" />
+                      <Activity className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">Volume</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? peDepth.v : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{peDepth ? peDepth.v : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <BarChart3 className="w-3 h-3 text-slate-400" />
+                      <BarChart3 className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">OI / OI Chg%</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? `${peDepth.oi} / ${peDepth.oipercent ?? '--'}%` : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{peDepth ? `${peDepth.oi} / ${peDepth.oipercent ?? '--'}%` : '--'}</div>
                     <div className="flex items-center gap-1">
-                      <Shield className="w-3 h-3 text-slate-400" />
+                      <Shield className="w-2.5 h-2.5 text-slate-400" />
                       <span className="text-xs text-slate-400">IV</span>
                     </div>
-                    <div className="text-sm font-mono font-semibold text-white">{peDepth ? peDepth.iv : '--'}</div>
+                    <div className="text-xs font-mono font-semibold text-white">{peDepth ? peDepth.iv : '--'}</div>
                 </div>
               </div>
             </div>

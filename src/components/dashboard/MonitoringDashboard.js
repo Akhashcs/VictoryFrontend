@@ -1057,16 +1057,16 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   }
 
   return (
-    <div className="mb-6 sm:mb-8">
-      <div className="space-y-4 sm:space-y-6">
+    <div className="mb-4 sm:mb-6">
+      <div className="space-y-3 sm:space-y-4">
         {/* Waiting for Entry Card - Always show */}
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 sm:p-8">
-          <div className="flex items-center justify-between mb-4 p-4 border-b border-slate-700/50">
+        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4">
+          <div className="flex items-center justify-between mb-3 p-3 border-b border-slate-700/50">
             <div className="flex items-center gap-2">
-              <Eye className="w-5 h-5 text-brand" />
-              <h4 className="text-lg font-semibold text-white">Waiting for Entry</h4>
+              <Eye className="w-4 h-4 text-brand" />
+              <h4 className="text-base font-semibold text-white">Waiting for Entry</h4>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {monitoredSymbols.length > 0 && (
                 <>
                   <span className="text-xs text-slate-500">
@@ -1081,7 +1081,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                   <button
                     onClick={handleManualHMARefresh}
                     disabled={isRefreshingHMA}
-                    className={`px-3 py-1 rounded-lg transition-colors text-xs ${
+                    className={`px-2 py-1 rounded-lg transition-colors text-xs ${
                       isRefreshingHMA 
                         ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
                         : 'bg-blue-800 text-white hover:bg-blue-700'
@@ -1089,13 +1089,6 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                     title="Manually refresh HMA values"
                   >
                     {isRefreshingHMA ? 'Refreshing...' : 'Refresh HMA'}
-                  </button>
-                  <button
-                    onClick={handleStopAll}
-                    className="px-3 py-1 bg-red-800 text-white rounded-lg hover:bg-red-700 transition-colors text-xs"
-                    title="Stop monitoring all symbols"
-                  >
-                    Stop All
                   </button>
                 </>
               )}
@@ -1106,13 +1099,13 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-600">
-                    <th className="text-left py-2 px-3 text-sm font-medium text-slate-300">Symbol Name</th>
-                    <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">LTP</th>
-                    <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">HMA-55</th>
-                    <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">Target</th>
-                    <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">Stop Loss (SL)</th>
-                    <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Status</th>
-                    <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Action</th>
+                    <th className="text-left py-1.5 px-2 text-xs font-medium text-slate-300">Symbol Name</th>
+                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">LTP</th>
+                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">HMA-55</th>
+                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">Target</th>
+                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">Stop Loss (SL)</th>
+                    <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Status</th>
+                    <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1120,51 +1113,51 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                     const { target, stopLoss } = calculateTargetSL(item.currentLTP, item.targetPoints, item.stopLossPoints);
                     return (
                       <tr key={item.id} className="border-b border-slate-700 hover:bg-slate-700/50">
-                        <td className="py-3 px-3">
+                        <td className="py-2 px-2">
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${item.type === 'CE' ? 'bg-blue-900/30 text-blue-400' : 'bg-purple-900/30 text-purple-400'}`}>{item.type}</span>
-                            <span className="text-sm font-medium text-white">{item.symbol}</span>
+                            <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${item.type === 'CE' ? 'bg-blue-900/30 text-blue-400' : 'bg-purple-900/30 text-purple-400'}`}>{item.type}</span>
+                            <span className="text-xs font-medium text-white">{item.symbol}</span>
                             {/* Trade type chip */}
-                            <span className={`ml-2 px-2 py-0.5 text-xs rounded-full font-semibold ${item.tradingMode === 'LIVE' ? 'bg-blue-700/80 text-white border border-blue-400' : 'bg-slate-700/80 text-slate-300 border border-slate-500'}`}
+                            <span className={`ml-2 px-1.5 py-0.5 text-xs rounded-full font-semibold ${item.tradingMode === 'LIVE' ? 'bg-blue-700/80 text-white border border-blue-400' : 'bg-slate-700/80 text-slate-300 border border-slate-500'}`}
                               title={item.tradingMode === 'LIVE' ? 'Live Trade' : 'Paper Trade'}>
                               {item.tradingMode === 'LIVE' ? 'LIVE' : 'PAPER'}
                             </span>
                           </div>
                         </td>
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-sm font-semibold text-white">
+                        <td className="py-2 px-2 text-right">
+                          <span className="text-xs font-semibold text-white">
                             {formatPrice(item.currentLTP)}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-sm font-semibold text-slate-300">
+                        <td className="py-2 px-2 text-right">
+                          <span className="text-xs font-semibold text-slate-300">
                             {formatPrice(item.hmaValue)}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-sm font-semibold text-green-400">
+                        <td className="py-2 px-2 text-right">
+                          <span className="text-xs font-semibold text-green-400">
                             {formatPrice(target)}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-right">
-                          <span className="text-sm font-semibold text-red-400">
+                        <td className="py-2 px-2 text-right">
+                          <span className="text-xs font-semibold text-red-400">
                             {formatPrice(stopLoss)}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(item.triggerStatus)}`}
+                        <td className="py-2 px-2 text-center">
+                          <span className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(item.triggerStatus)}`}
                                 title={item.orderModificationReason ? `Reason: ${item.orderModificationReason}` : ''}>
                             {getStatusDescription(item)}
                             {item.triggerStatus === 'CONFIRMING' && getConfirmingCountdown(item) !== null && (
-                              <span className="ml-2 text-xs text-slate-400">({getConfirmingCountdown(item)})</span>
+                              <span className="ml-1 text-xs text-slate-400">({getConfirmingCountdown(item)})</span>
                             )}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-2 px-2 text-center">
                           <div className="flex gap-1">
                             <button
                               onClick={() => handleStopMonitoringSymbol(item.id)}
-                              className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
+                              className="px-1.5 py-0.5 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
                               title={`Stop monitoring ${item.symbol}`}
                             >
                               Stop Monitoring
@@ -1172,7 +1165,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                             {(item.triggerStatus === 'WAITING' || item.triggerStatus === 'WAITING_REENTRY') && (
                               <button
                                 onClick={() => handlePlaceLimitOrder(item)}
-                                className="px-2 py-1 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
+                                className="px-1.5 py-0.5 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
                                 title={`Place limit order for ${item.symbol}`}
                               >
                                 Place Limit Order
@@ -1199,14 +1192,14 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
 
         {/* Pending Orders Card */}
         {pendingOrders && pendingOrders.length > 0 && (
-          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 sm:p-8 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2 mb-4 p-4 border-b border-slate-700/50">
-                <Clock className="w-5 h-5 text-yellow-400" />
-                <h4 className="text-lg font-semibold text-white">Pending Orders</h4>
+          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4 mb-4 sm:mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2 mb-3 p-3 border-b border-slate-700/50">
+                <Clock className="w-4 h-4 text-yellow-400" />
+                <h4 className="text-base font-semibold text-white">Pending Orders</h4>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-slate-400">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400">
                   Waiting for HMA trigger
                 </span>
               </div>
@@ -1288,15 +1281,15 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
         )}
 
         {/* Active Positions Card - Always show */}
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 sm:p-8">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 mb-4 p-4 border-b border-slate-700/50">
-              <TrendingUp className="w-5 h-5 text-brand" />
-              <h4 className="text-lg font-semibold text-white">Active Positions</h4>
+        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 mb-3 p-3 border-b border-slate-700/50">
+              <TrendingUp className="w-4 h-4 text-brand" />
+              <h4 className="text-base font-semibold text-white">Active Positions</h4>
             </div>
             {activePositions.length > 0 && (
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-slate-400">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400">
                   Total P&L: <span className={`font-bold ${totalUnrealized >= 0 ? 'text-green-400' : 'text-red-400'}`}>₹{totalUnrealized.toFixed(2)}</span>
                 </span>
               </div>

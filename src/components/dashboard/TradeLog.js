@@ -139,17 +139,17 @@ const TradeLog = () => {
   // }, []);
 
   return (
-    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-8">
-      <div className="flex justify-between items-center p-4 border-b border-slate-700/50">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-brand" />
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4">
+      <div className="flex justify-between items-center p-3 border-b border-slate-700/50">
+        <h3 className="text-base font-semibold text-white flex items-center gap-2">
+          <DollarSign className="w-4 h-4 text-brand" />
           Trade Logs
         </h3>
         <div className="flex items-center gap-2">
           <select
             value={sourceType}
             onChange={e => setSourceType(e.target.value)}
-            className="px-3 py-1.5 rounded-md bg-slate-700 border border-slate-600 text-white text-xs focus:outline-none focus:ring-2 focus:ring-brand"
+            className="px-2 py-1 rounded-md bg-slate-700 border border-slate-600 text-white text-xs focus:outline-none focus:ring-2 focus:ring-brand"
           >
             <option value="FYERS">Fyers Only</option>
             <option value="ALL">All Sources</option>
@@ -158,7 +158,7 @@ const TradeLog = () => {
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className={`px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 ${
+            className={`px-2 py-1 rounded-md transition-colors text-xs font-bold flex items-center gap-1 ${
               isRefreshing 
                 ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
                 : 'bg-brand/10 hover:bg-brand/20 text-brand-light'
@@ -170,7 +170,7 @@ const TradeLog = () => {
           </button>
           <button
             onClick={() => setShowAll(true)}
-            className="px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand-light text-xs font-bold rounded-md transition-colors"
+            className="px-2 py-1 bg-brand/10 hover:bg-brand/20 text-brand-light text-xs font-bold rounded-md transition-colors"
           >
             View All Trades
           </button>

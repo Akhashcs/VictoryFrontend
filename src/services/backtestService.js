@@ -91,6 +91,21 @@ class BacktestService {
   }
 
   /**
+   * Delete a saved backtest
+   * @param {string} id - Backtest ID
+   * @returns {Promise<Object>} Delete response
+   */
+  static async deleteBacktest(id) {
+    try {
+      const response = await api.delete(`/backtest/saved/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error('BacktestService: Error deleting backtest:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Validate symbol format for Fyers
    * @param {string} symbol - Symbol to validate
    * @returns {boolean} Whether symbol is valid

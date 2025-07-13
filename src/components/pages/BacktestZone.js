@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import BacktestService from '../../services/backtestService';
+import { FolderOpen, Trash2 } from 'lucide-react';
 
 // Strategy templates (can be extended)
 const STRATEGIES = [
@@ -159,6 +160,8 @@ const BacktestZone = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [savedBacktests, setSavedBacktests] = useState([]);
+  const [showCrossoverModal, setShowCrossoverModal] = useState(false);
+  const [crossoverDetails, setCrossoverDetails] = useState([]);
 
   const currentStrategy = STRATEGIES.find(s => s.key === strategyKey);
 
@@ -227,26 +230,8 @@ const BacktestZone = () => {
     // Allow recent dates (within 24 hours) since backend handles prefill
     // The backend will automatically fetch prefill data for HMA calculations
 
-    // Check time constraints (9:15 AM to 3:30 PM IST)
-    const startHour = startDate.getHours();
-    const startMinute = startDate.getMinutes();
-    const endHour = endDate.getHours();
-    const endMinute = endDate.getMinutes();
-
-    const startTime = startHour * 60 + startMinute;
-    const endTime = endHour * 60 + endMinute;
-    const marketOpen = 9 * 60 + 15; // 9:15 AM
-    const marketClose = 15 * 60 + 30; // 3:30 PM
-
-    if (startTime < marketOpen || startTime > marketClose) {
-      toast.error('Start time must be between 9:15 AM and 3:30 PM IST');
-      return false;
-    }
-
-    if (endTime < marketOpen || endTime > marketClose) {
-      toast.error('End time must be between 9:15 AM and 3:30 PM IST');
-      return false;
-    }
+    // Removed market time restrictions to support commodities trading until 11:20 PM
+    // Users can now select any time within the 6-month range
 
     return true;
   };
@@ -344,10 +329,13 @@ const BacktestZone = () => {
     try {
       const response = await BacktestService.saveBacktest({
         name: saveName,
-        ...formData,
-        startDate: toUTCISOString(formData.startDate),
-        endDate: toUTCISOString(formData.endDate),
-        results: backtestResults
+        backtestData: {
+          ...formData,
+          startDate: toUTCISOString(formData.startDate),
+          endDate: toUTCISOString(formData.endDate),
+          kpis: backtestResults.kpis,
+          trades: backtestResults.trades
+        }
       });
 
       if (response.success) {
@@ -426,6 +414,27 @@ const BacktestZone = () => {
     }
   };
 
+  // Delete backtest
+  const handleDeleteBacktest = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) {
+      return;
+    }
+
+    try {
+      const response = await BacktestService.deleteBacktest(id);
+      if (response.success) {
+        toast.success('Backtest deleted successfully');
+        // Reload saved backtests
+        loadSavedBacktests();
+      } else {
+        toast.error(response.message || 'Failed to delete backtest');
+      }
+    } catch (error) {
+      console.error('Error deleting backtest:', error);
+      toast.error('Failed to delete backtest');
+    }
+  };
+
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -455,41 +464,136 @@ const BacktestZone = () => {
     }
   };
 
+  // Format symbol with line break after exchange prefix
+  const formatSymbol = (symbol) => {
+    if (!symbol) return '';
+    
+    // Check for exchange prefixes
+    const prefixes = ['NSE:', 'BSE:', 'MCX:', 'NCDEX:'];
+    for (const prefix of prefixes) {
+      if (symbol.startsWith(prefix)) {
+        return (
+          <span>
+            {prefix}<br />
+            {symbol.substring(prefix.length)}
+          </span>
+        );
+      }
+    }
+    
+    // If no prefix found, return as is
+    return symbol;
+  };
+
+  // Calculate margin required based on highest entry price
+  const calculateMarginRequired = () => {
+    if (!backtestResults || !backtestResults.trades || backtestResults.trades.length === 0) {
+      return 0;
+    }
+    
+    // Find the trade with the highest entry price
+    const highestEntryTrade = backtestResults.trades.reduce((max, trade) => 
+      trade.entryPrice > max.entryPrice ? trade : max
+    );
+    
+    // Calculate margin: entry price * quantity
+    return highestEntryTrade.entryPrice * backtestResults.quantity;
+  };
+
+  // Find HMA crossover points
+  const findHMACrossovers = () => {
+    if (!historicalData || !historicalData.candles || historicalData.candles.length < 2) {
+      return [];
+    }
+    
+    const crossovers = [];
+    const candles = historicalData.candles;
+    
+    for (let i = 1; i < candles.length; i++) {
+      const current = candles[i];
+      const previous = candles[i - 1];
+      
+      // Check for HMA crossover: LTP crosses above HMA
+      if (previous.close <= previous.hma && current.close > current.hma) {
+        crossovers.push({
+          timestamp: current.timestamp,
+          time: formatDate(current.timestamp),
+          candleIndex: i,
+          entryPrice: current.open,
+          closePrice: current.close,
+          hmaValue: current.hma,
+          volume: current.volume
+        });
+      }
+    }
+    
+    return crossovers;
+  };
+
+  // Handle view crossover details
+  const handleViewCrossovers = () => {
+    if (!backtestResults || !backtestResults.trades) {
+      toast.error('No backtest results available');
+      return;
+    }
+    
+    // Extract crossover details from backtest trades
+    const crossovers = backtestResults.trades.map((trade, index) => ({
+      timestamp: trade.entryTime,
+      time: formatDate(trade.entryTime),
+      tradeIndex: index + 1,
+      entryPrice: trade.entryPrice,
+      exitPrice: trade.exitPrice,
+      pnl: trade.pnl,
+      exitReason: trade.exitReason,
+      duration: trade.duration
+    }));
+    
+    setCrossoverDetails(crossovers);
+    setShowCrossoverModal(true);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-6">
+    <div className="min-h-screen bg-slate-900 text-white p-4">
       <div className="max-w-7xl mx-auto">
         {/* Main Layout - 1/4 for saved strategies, 3/4 for backtest parameters */}
-        <div className="flex gap-6">
+        <div className="flex gap-4">
           {/* Saved Strategies List - 1/4 width */}
           <div className="w-1/4">
-            <div className="bg-slate-800 rounded-lg shadow-md p-6 border border-slate-700">
-              <h2 className="text-xl font-semibold mb-4 text-white">Saved Strategies</h2>
+            <div className="bg-slate-800/50 rounded-lg shadow-md p-3 sm:p-4 border border-slate-700/50 mb-4">
+              <h2 className="text-base font-semibold mb-3 text-white">Saved Strategies</h2>
               
               {savedBacktests.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="text-slate-400 text-6xl mb-4">📊</div>
-                  <p className="text-slate-400 text-sm mb-2">No saved backtests yet</p>
+                <div className="text-center py-6">
+                  <div className="text-slate-400 text-4xl mb-3">📊</div>
+                  <p className="text-slate-400 text-xs mb-1">No saved backtests yet</p>
                   <p className="text-slate-500 text-xs">Run a backtest and save it to see it here</p>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
+                <div className="space-y-1.5 max-h-96 overflow-y-auto">
                   {savedBacktests.map((backtest) => (
-                    <div key={backtest._id} className="border border-slate-600 rounded-lg p-3 hover:bg-slate-700 cursor-pointer transition-colors">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-sm text-white truncate">{backtest.name}</h4>
-                        <button
-                          onClick={() => loadBacktestDetails(backtest._id)}
-                          className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                        >
-                          Load
-                        </button>
+                    <div key={backtest._id} className="border border-slate-600 rounded-lg p-1.5 hover:bg-slate-700 transition-colors">
+                      <div className="flex justify-between items-start mb-1">
+                        <h4 className="font-semibold text-xs text-white truncate flex-1 mr-2">{backtest.name}</h4>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => loadBacktestDetails(backtest._id)}
+                            className="w-8 h-8 bg-blue-600 text-white rounded flex items-center justify-center hover:bg-blue-700 transition-colors"
+                            title="Load backtest"
+                          >
+                            <FolderOpen className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBacktest(backtest._id, backtest.name)}
+                            className="w-8 h-8 bg-red-600 text-white rounded flex items-center justify-center hover:bg-red-700 transition-colors"
+                            title="Delete backtest"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                       
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Strategy:</span>
-                          <span className="text-white font-medium">{backtest.strategy}</span>
-                        </div>
+                      <div className="space-y-0.5 text-xs">
                         <div className="flex justify-between">
                           <span className="text-slate-400">Symbol:</span>
                           <span className="text-white font-medium truncate">{backtest.symbol}</span>
@@ -527,13 +631,13 @@ const BacktestZone = () => {
           {/* Backtest Parameters - 3/4 width */}
           <div className="w-3/4">
             {/* Backtest Form */}
-            <div className="bg-slate-800 rounded-lg shadow-md p-6 mb-8 border border-slate-700">
-              <h2 className="text-xl font-semibold mb-6 text-white">Backtest Parameters</h2>
+            <div className="bg-slate-800/50 rounded-lg shadow-md p-3 sm:p-4 border border-slate-700/50 mb-4" style={{ marginBottom: '1rem' }}>
+              <h2 className="text-base font-semibold mb-3 text-white">Backtest Parameters</h2>
               
               {/* Symbol and Quantity */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
                     Symbol *
                   </label>
                   <input
@@ -542,12 +646,13 @@ const BacktestZone = () => {
                     value={formData.symbol}
                     onChange={handleInputChange}
                     placeholder="e.g., NSE:NIFTY2571025350CE, NSE:RELIANCE-EQ"
-                    className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white placeholder-slate-400"
+                    className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white placeholder-slate-400 text-xs focus:bg-slate-700 focus:text-white autocomplete-off"
+                    style={{ color: 'white', backgroundColor: '#334155' }}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
                     Quantity *
                   </label>
                   <input
@@ -556,15 +661,15 @@ const BacktestZone = () => {
                     value={formData.quantity}
                     onChange={handleInputChange}
                     min={1}
-                    className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                    className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                   />
                 </div>
               </div>
 
               {/* Time and Date Selection */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
                     Start Date & Time (IST) *
                   </label>
                   <input
@@ -572,12 +677,12 @@ const BacktestZone = () => {
                     name="startDate"
                     value={formData.startDate}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                    className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
                     End Date & Time (IST) *
                   </label>
                   <input
@@ -585,56 +690,42 @@ const BacktestZone = () => {
                     name="endDate"
                     value={formData.endDate}
                     onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                    className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                   />
                 </div>
               </div>
               
-              {/* Date selection help */}
-              <div className="mb-6 p-3 bg-slate-700 rounded-lg border border-slate-600">
-                <p className="text-xs text-slate-300">
-                  💡 <strong>Date Selection Tips:</strong> You can select any past date within 6 months. 
-                  For single-day backtests, the system automatically fetches prefill data from previous days for accurate HMA calculations. 
-                  Market hours: 9:15 AM - 3:30 PM IST.
-                </p>
-              </div>
+
 
               {/* Strategy Parameters */}
               {currentStrategy && (
-                <div className="mb-6">
-                  <h3 className="text-lg font-semibold mb-4 text-white">Strategy Parameters</h3>
+                <div className="mb-4">
+                  <h3 className="text-sm font-semibold mb-3 text-white">Strategy Parameters</h3>
                   
-                  {/* Prefill info */}
-                  <div className="mb-4 p-3 bg-blue-900/20 rounded-lg border border-blue-700/50">
-                    <p className="text-xs text-blue-300">
-                      🔄 <strong>Prefill Data:</strong> The system automatically fetches {formData.hmaPeriod} additional candles 
-                      from before your start date to ensure accurate HMA calculations. 
-                      Total data fetched: {formData.hmaPeriod} prefill + your selected period.
-                    </p>
-                  </div>
+
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     {/* Strategy and HMA Length on first row */}
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
                         Strategy *
                       </label>
                       <select
                         value={strategyKey}
                         onChange={handleStrategyChange}
-                        className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                        className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                       >
                         {STRATEGIES.map(s => (
                           <option key={s.key} value={s.key}>{s.label}</option>
                         ))}
                       </select>
                       {currentStrategy && (
-                        <p className="text-sm text-slate-400 mt-1">{currentStrategy.description}</p>
+                        <p className="text-xs text-slate-400 mt-1">{currentStrategy.description}</p>
                       )}
                     </div>
                     
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
                         HMA Length
                       </label>
                       <input
@@ -644,19 +735,19 @@ const BacktestZone = () => {
                         onChange={handleInputChange}
                         min={1}
                         max={200}
-                        className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                        className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                       />
                     </div>
                     
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                      <label className="block text-xs font-medium text-slate-300 mb-1">
                         Candle Interval
                       </label>
                       <select
                         name="interval"
                         value={formData.interval}
                         onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                        className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                       >
                         <option value="1">1 minute</option>
                         <option value="5">5 minutes</option>
@@ -675,9 +766,9 @@ const BacktestZone = () => {
                           name="useTrailingStoploss"
                           checked={formData.useTrailingStoploss}
                           onChange={handleInputChange}
-                          className="mr-2"
+                          className="mr-2 h-3 w-3"
                         />
-                        <span className="text-slate-300">Trailing Stoploss</span>
+                        <span className="text-xs text-slate-300">Trailing Stoploss</span>
                       </label>
                     </div>
                     
@@ -688,25 +779,25 @@ const BacktestZone = () => {
                           name="trailSlToCost"
                           checked={formData.trailSlToCost}
                           onChange={handleInputChange}
-                          className="mr-2"
+                          className="mr-2 h-3 w-3"
                         />
-                        <span className="text-slate-300">Trail SL to Entry</span>
+                        <span className="text-xs text-slate-300">Trail SL to Entry</span>
                       </label>
                     </div>
                     
                     {/* Target and Stop Loss with Type Selection */}
                     <div className="md:col-span-3">
-                      <div className="grid grid-cols-4 gap-4">
+                      <div className="grid grid-cols-4 gap-3">
                         {/* Target Type */}
                         <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
                             Target Type
                           </label>
                           <select
                             name="targetType"
                             value={formData.targetType}
                             onChange={handleInputChange}
-                            className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                            className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                           >
                             <option value="points">Points</option>
                             <option value="percentage">Percentage</option>
@@ -715,7 +806,7 @@ const BacktestZone = () => {
                         
                         {/* Target Value */}
                         <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
                             Target ({formData.targetType === 'percentage' ? '%' : 'Points'})
                           </label>
                           <input
@@ -725,20 +816,20 @@ const BacktestZone = () => {
                             onChange={handleInputChange}
                             min={1}
                             max={formData.targetType === 'percentage' ? 100 : 1000}
-                            className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                            className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                           />
                         </div>
                         
                         {/* Stop Loss Type */}
                         <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
                             Stop Loss Type
                           </label>
                           <select
                             name="stopLossType"
                             value={formData.stopLossType}
                             onChange={handleInputChange}
-                            className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                            className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                           >
                             <option value="points">Points</option>
                             <option value="percentage">Percentage</option>
@@ -747,7 +838,7 @@ const BacktestZone = () => {
                         
                         {/* Stop Loss Value */}
                         <div>
-                          <label className="block text-sm font-medium text-slate-300 mb-2">
+                          <label className="block text-xs font-medium text-slate-300 mb-1">
                             Stop Loss ({formData.stopLossType === 'percentage' ? '%' : 'Points'})
                           </label>
                           <input
@@ -757,7 +848,7 @@ const BacktestZone = () => {
                             onChange={handleInputChange}
                             min={1}
                             max={formData.stopLossType === 'percentage' ? 100 : 1000}
-                            className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white"
+                            className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white text-xs"
                           />
                         </div>
                       </div>
@@ -779,11 +870,11 @@ const BacktestZone = () => {
               )}
 
               {/* Action Buttons */}
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <button
                   onClick={fetchHistoricalData}
                   disabled={loading}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
                 >
                   {loading ? 'Fetching...' : 'Get Data'}
                 </button>
@@ -791,7 +882,7 @@ const BacktestZone = () => {
                 <button
                   onClick={executeBacktest}
                   disabled={loading || !historicalData}
-                  className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium"
                 >
                   {loading ? 'Executing...' : 'Execute Backtest'}
                 </button>
@@ -800,24 +891,24 @@ const BacktestZone = () => {
 
             {/* Historical Data Summary */}
             {historicalData && (
-              <div className="bg-slate-800 rounded-lg shadow-md p-6 mb-8 border border-slate-700">
-                <h2 className="text-xl font-semibold mb-4 text-white">Historical Data Summary</h2>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-blue-400 font-medium">Symbol</div>
-                    <div className="text-lg font-semibold text-white">{historicalData.symbol}</div>
+              <div className="bg-slate-800/50 rounded-lg shadow-md p-3 sm:p-4 border border-slate-700/50 mb-4" style={{ marginBottom: '1rem' }}>
+                <h2 className="text-base font-semibold mb-3 text-white">Historical Data Summary</h2>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-blue-400 font-medium">Symbol</div>
+                    <div className="text-sm font-semibold text-white break-words">{formatSymbol(historicalData.symbol)}</div>
                   </div>
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-green-400 font-medium">Candles</div>
-                    <div className="text-lg font-semibold text-white">{historicalData.count}</div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-green-400 font-medium">Candles</div>
+                    <div className="text-sm font-semibold text-white">{historicalData.count}</div>
                   </div>
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-yellow-400 font-medium">Start Date</div>
-                    <div className="text-sm font-semibold text-white">{formatDate(historicalData.startDate)}</div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-yellow-400 font-medium">Start Date</div>
+                    <div className="text-xs font-semibold text-white">{formatDate(historicalData.startDate)}</div>
                   </div>
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-purple-400 font-medium">End Date</div>
-                    <div className="text-sm font-semibold text-white">{formatDate(historicalData.endDate)}</div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-purple-400 font-medium">End Date</div>
+                    <div className="text-xs font-semibold text-white">{formatDate(historicalData.endDate)}</div>
                   </div>
                 </div>
               </div>
@@ -825,78 +916,79 @@ const BacktestZone = () => {
 
             {/* Backtest Results */}
             {backtestResults && (
-              <div className="bg-slate-800 rounded-lg shadow-md p-6 border border-slate-700">
-                <h2 className="text-xl font-semibold mb-4 text-white">Backtest Results</h2>
+              <div className="bg-slate-800/50 rounded-lg shadow-md p-3 sm:p-4 border border-slate-700/50">
+                <h2 className="text-base font-semibold mb-3 text-white">Backtest Results</h2>
                 
-                {/* Trade Count Explanation */}
-                <div className="mb-6 p-4 bg-blue-900/20 rounded-lg border border-blue-700/50">
-                  <div className="flex items-start space-x-3">
-                    <div className="text-blue-400 text-xl">💡</div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-blue-300 mb-1">Trade Count Explanation</h4>
-                      <p className="text-xs text-blue-200">
-                        <strong>Entry Signals:</strong> Number of HMA crossover signals (same regardless of target/stop loss). 
-                        <strong>Completed Trades:</strong> Number of trades that hit target, stop loss, or end of day (3:20 PM IST). 
-                        This varies based on your target/stop loss settings - tighter targets = more completed trades, 
-                        wider targets = fewer completed trades (more exit at end of day).
-                      </p>
-                    </div>
-                  </div>
-                </div>
+
                 
                 {/* Summary Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-blue-400 font-medium">Entry Signals</div>
-                    <div className="text-2xl font-bold text-white">{backtestResults.entrySignals || backtestResults.totalTrades}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3 mb-4">
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-blue-400 font-medium">Entry Signals</div>
+                    <div className="text-lg font-bold text-white">{backtestResults.entrySignals || backtestResults.totalTrades}</div>
                     <div className="text-xs text-slate-400 mt-1">HMA Crossovers</div>
                   </div>
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-green-400 font-medium">Completed Trades</div>
-                    <div className="text-2xl font-bold text-white">{backtestResults.completedTrades || backtestResults.totalTrades}</div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-green-400 font-medium">Completed Trades</div>
+                    <div className="text-lg font-bold text-white">{backtestResults.completedTrades || backtestResults.totalTrades}</div>
                     <div className="text-xs text-slate-400 mt-1">
                       {backtestResults.openTrades > 0 ? `${backtestResults.openTrades} open` : 'All closed'}
                     </div>
                   </div>
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-yellow-400 font-medium">Win Rate</div>
-                    <div className="text-2xl font-bold text-white">{backtestResults.winRate.toFixed(2)}%</div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-yellow-400 font-medium">Win Rate</div>
+                    <div className="text-lg font-bold text-white">{backtestResults.winRate.toFixed(2)}%</div>
                   </div>
-                  <div className="bg-slate-700 p-4 rounded-lg border border-slate-600">
-                    <div className="text-sm text-purple-400 font-medium">Total PnL</div>
-                    <div className={`text-2xl font-bold ${backtestResults.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-purple-400 font-medium">Total PnL</div>
+                    <div className={`text-lg font-bold ${backtestResults.totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       ₹{backtestResults.totalPnL.toFixed(2)}
                     </div>
+                  </div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-orange-400 font-medium">Margin Required</div>
+                    <div className="text-lg font-bold text-white">₹{calculateMarginRequired().toFixed(2)}</div>
+                    <div className="text-xs text-slate-400 mt-1">Highest entry × Qty</div>
+                  </div>
+                  <div className="bg-slate-700 p-3 rounded-lg border border-slate-600">
+                    <div className="text-xs text-indigo-400 font-medium">Crossovers</div>
+                    <div className="text-lg font-bold text-white">{backtestResults.entrySignals || 0}</div>
+                    <button
+                      onClick={handleViewCrossovers}
+                      className="mt-1 px-2 py-0.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                    >
+                      View
+                    </button>
                   </div>
                 </div>
 
                 {/* Strategy Parameters */}
-                <div className="bg-slate-700 p-4 rounded-lg mb-6 border border-slate-600">
-                  <h3 className="text-lg font-semibold mb-2 text-white">Strategy Parameters</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-slate-700 p-3 rounded-lg mb-4 border border-slate-600">
+                  <h3 className="text-sm font-semibold mb-2 text-white">Strategy Parameters</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div>
-                      <span className="text-sm text-slate-400">Strategy:</span>
-                      <span className="ml-2 font-medium text-white">{currentStrategy?.label}</span>
+                      <span className="text-xs text-slate-400">Strategy:</span>
+                      <span className="ml-2 font-medium text-white text-xs">{currentStrategy?.label}</span>
                     </div>
                     <div>
-                      <span className="text-sm text-slate-400">Symbol:</span>
-                      <span className="ml-2 font-medium text-white">{backtestResults.symbol}</span>
+                      <span className="text-xs text-slate-400">Symbol:</span>
+                      <span className="ml-2 font-medium text-white text-xs break-words">{formatSymbol(backtestResults.symbol)}</span>
                     </div>
                     <div>
-                      <span className="text-sm text-slate-400">Quantity:</span>
-                      <span className="ml-2 font-medium text-white">{backtestResults.quantity}</span>
+                      <span className="text-xs text-slate-400">Quantity:</span>
+                      <span className="ml-2 font-medium text-white text-xs">{backtestResults.quantity}</span>
                     </div>
                     <div>
-                      <span className="text-sm text-slate-400">HMA Period:</span>
-                      <span className="ml-2 font-medium text-white">{backtestResults.hmaPeriod}</span>
+                      <span className="text-xs text-slate-400">HMA Period:</span>
+                      <span className="ml-2 font-medium text-white text-xs">{backtestResults.hmaPeriod}</span>
                     </div>
                     <div>
-                      <span className="text-sm text-slate-400">Target:</span>
-                      <span className="ml-2 font-medium text-white">{backtestResults.target} points</span>
+                      <span className="text-xs text-slate-400">Target:</span>
+                      <span className="ml-2 font-medium text-white text-xs">{backtestResults.target} points</span>
                     </div>
                     <div>
-                      <span className="text-sm text-slate-400">Stop Loss:</span>
-                      <span className="ml-2 font-medium text-white">{backtestResults.stopLoss} points</span>
+                      <span className="text-xs text-slate-400">Stop Loss:</span>
+                      <span className="ml-2 font-medium text-white text-xs">{backtestResults.stopLoss} points</span>
                     </div>
                   </div>
                 </div>
@@ -904,33 +996,33 @@ const BacktestZone = () => {
                 {/* Trades Table */}
                 {backtestResults.trades && backtestResults.trades.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-semibold mb-4 text-white">Trade Details</h3>
+                    <h3 className="text-sm font-semibold mb-3 text-white">Trade Details</h3>
                     <div className="overflow-x-auto">
                       <table className="min-w-full bg-slate-800 border border-slate-600">
                         <thead>
                           <tr className="bg-slate-700">
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Entry</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Exit</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Entry Price</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Exit Price</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">PnL</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Duration</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Reason</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Entry</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Exit</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Entry Price</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Exit Price</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">PnL</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Duration</th>
+                            <th className="px-3 py-1.5 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Reason</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-600">
                           {backtestResults.trades.map((trade, index) => (
                             <tr key={index} className="hover:bg-slate-700">
-                              <td className="px-4 py-2 text-sm text-white">{formatDate(trade.entryTime)}</td>
-                              <td className="px-4 py-2 text-sm text-white">{formatDate(trade.exitTime)}</td>
-                              <td className="px-4 py-2 text-sm font-medium text-white">₹{trade.entryPrice.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-sm font-medium text-white">₹{trade.exitPrice.toFixed(2)}</td>
-                              <td className={`px-4 py-2 text-sm font-medium ${trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              <td className="px-3 py-1.5 text-xs text-white">{formatDate(trade.entryTime)}</td>
+                              <td className="px-3 py-1.5 text-xs text-white">{formatDate(trade.exitTime)}</td>
+                              <td className="px-3 py-1.5 text-xs font-medium text-white">₹{trade.entryPrice.toFixed(2)}</td>
+                              <td className="px-3 py-1.5 text-xs font-medium text-white">₹{trade.exitPrice.toFixed(2)}</td>
+                              <td className={`px-3 py-1.5 text-xs font-medium ${trade.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                                 ₹{trade.pnl.toFixed(2)}
                               </td>
-                              <td className="px-4 py-2 text-sm text-white">{formatDuration(trade.duration)}</td>
-                              <td className="px-4 py-2 text-sm">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              <td className="px-3 py-1.5 text-xs text-white">{formatDuration(trade.duration)}</td>
+                              <td className="px-3 py-1.5 text-xs">
+                                <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${
                                   trade.exitReason === 'TARGET' ? 'bg-green-900 text-green-300' :
                                   trade.exitReason === 'STOP_LOSS' ? 'bg-red-900 text-red-300' :
                                   trade.exitReason === 'END_OF_DAY' ? 'bg-orange-900 text-orange-300' :
@@ -948,10 +1040,10 @@ const BacktestZone = () => {
                 )}
 
                 {/* Save Backtest Button */}
-                <div className="mt-6">
+                <div className="mt-4">
                   <button
                     onClick={() => setShowSaveModal(true)}
-                    className="px-6 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                    className="px-4 py-1.5 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 text-xs font-medium"
                   >
                     Save Backtest
                   </button>
@@ -964,10 +1056,10 @@ const BacktestZone = () => {
         {/* Save Backtest Modal */}
         {showSaveModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 rounded-lg p-6 w-full max-w-md border border-slate-700">
-              <h3 className="text-lg font-semibold mb-4 text-white">Save Backtest</h3>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+            <div className="bg-slate-800 rounded-lg p-4 w-full max-w-md border border-slate-700">
+              <h3 className="text-base font-semibold mb-3 text-white">Save Backtest</h3>
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-slate-300 mb-1">
                   Backtest Name *
                 </label>
                 <input
@@ -975,14 +1067,14 @@ const BacktestZone = () => {
                   value={saveName}
                   onChange={(e) => setSaveName(e.target.value)}
                   placeholder="Enter a name for this backtest"
-                  className="w-full px-3 py-2 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white placeholder-slate-400"
+                  className="w-full px-2 py-1.5 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-700 text-white placeholder-slate-400 text-xs"
                 />
               </div>
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <button
                   onClick={saveBacktest}
                   disabled={loading || !saveName.trim()}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  className="flex-1 px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-xs font-medium"
                 >
                   {loading ? 'Saving...' : 'Save'}
                 </button>
@@ -991,11 +1083,75 @@ const BacktestZone = () => {
                     setShowSaveModal(false);
                     setSaveName('');
                   }}
-                  className="flex-1 px-4 py-2 bg-slate-600 text-slate-300 rounded-md hover:bg-slate-500"
+                  className="flex-1 px-3 py-1.5 bg-slate-600 text-slate-300 rounded-md hover:bg-slate-500 text-xs font-medium"
                 >
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Crossover Details Modal */}
+        {showCrossoverModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-slate-800 rounded-lg p-4 w-full max-w-4xl max-h-[80vh] border border-slate-700 overflow-hidden">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-base font-semibold text-white">HMA Crossover Details</h3>
+                <button
+                  onClick={() => setShowCrossoverModal(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              {crossoverDetails.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-slate-400 text-4xl mb-3">📊</div>
+                  <p className="text-slate-400 text-sm">No HMA crossovers found in the selected period</p>
+                </div>
+              ) : (
+                <div className="overflow-y-auto max-h-[60vh]">
+                  <table className="min-w-full bg-slate-700 border border-slate-600">
+                    <thead>
+                      <tr className="bg-slate-600">
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">#</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Entry Time</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Entry Price</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Exit Price</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">PnL</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Duration</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Exit Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-600">
+                      {crossoverDetails.map((crossover, index) => (
+                        <tr key={index} className="hover:bg-slate-600">
+                          <td className="px-3 py-2 text-xs text-white">{crossover.tradeIndex}</td>
+                          <td className="px-3 py-2 text-xs text-white">{crossover.time}</td>
+                          <td className="px-3 py-2 text-xs font-medium text-white">₹{crossover.entryPrice.toFixed(2)}</td>
+                          <td className="px-3 py-2 text-xs font-medium text-white">₹{crossover.exitPrice.toFixed(2)}</td>
+                          <td className={`px-3 py-2 text-xs font-medium ${crossover.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            ₹{crossover.pnl.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-white">{formatDuration(crossover.duration)}</td>
+                          <td className="px-3 py-2 text-xs">
+                            <span className={`px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                              crossover.exitReason === 'TARGET' ? 'bg-green-900 text-green-300' :
+                              crossover.exitReason === 'STOP_LOSS' ? 'bg-red-900 text-red-300' :
+                              crossover.exitReason === 'END_OF_DAY' ? 'bg-orange-900 text-orange-300' :
+                              'bg-slate-600 text-slate-300'
+                            }`}>
+                              {crossover.exitReason === 'END_OF_DAY' ? 'END OF DAY' : crossover.exitReason.replace('_', ' ')}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
