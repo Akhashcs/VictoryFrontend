@@ -817,7 +817,8 @@ class MarketService {
       
       if (response.ok) {
         const data = await response.json();
-        return data.status === 'ok' ? 'running' : 'error';
+        // Backend returns 'healthy' status, not 'ok'
+        return data.status === 'healthy' ? 'running' : 'error';
       } else {
         return 'error';
       }
