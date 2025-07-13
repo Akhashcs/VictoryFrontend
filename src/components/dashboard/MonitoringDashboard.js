@@ -39,49 +39,18 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
       // Load monitored symbols from backend monitoring service
       const symbols = await BackendMonitoringService.getMonitoredSymbols();
       setMonitoredSymbols(symbols);
-      console.log('📊 Loaded monitored symbols from backend:', symbols.length);
-      console.log('📋 Symbol details:', symbols.map(s => ({
-        id: s.id,
-        symbol: s.symbol,
-        hmaValue: s.hmaValue,
-        triggerStatus: s.triggerStatus,
-        tradingMode: s.tradingMode
-      })));
       
       // Load active positions from backend
       const positions = await BackendMonitoringService.getActivePositions();
       setActivePositions(positions);
-      console.log('📈 Loaded active positions from backend:', positions.length);
-      console.log('📋 Position details:', positions.map(p => ({
-        id: p.id,
-        symbol: p.symbol,
-        type: p.type,
-        lots: p.lots,
-        boughtPrice: p.boughtPrice,
-        currentPrice: p.currentPrice,
-        pnl: p.pnl,
-        status: p.status
-      })));
 
       // Load pending orders from backend
       const pending = await BackendMonitoringService.getPendingOrders();
       setPendingOrders(pending);
-      console.log('⏳ Loaded pending orders from backend:', pending.length);
-      console.log('📋 Pending order details:', pending.map(p => ({
-        id: p.id,
-        symbol: p.symbol,
-        type: p.type,
-        lots: p.lots,
-        boughtPrice: p.boughtPrice,
-        triggerPrice: p.triggerPrice,
-        orderId: p.orderId,
-        status: p.status
-      })));
       
       // Subscribe to WebSocket updates for these symbols
       if (symbols.length > 0) {
         const symbolNames = symbols.map(s => s.symbol).filter(Boolean);
-        console.log('📡 Subscribing to WebSocket updates for symbols:', symbolNames);
         const { subscribeToSymbols } = await import('../../services/api');
         subscribeToSymbols(symbolNames);
       }
@@ -121,22 +90,19 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
       }
     };
 
-    // Refresh every 5 seconds
-    const interval = setInterval(refreshData, 5000);
+    // Refresh every 0.5 seconds
+    const interval = setInterval(refreshData, 500);
     return () => clearInterval(interval);
   }, []);
 
   // Subscribe to WebSocket market data updates
   useEffect(() => {
     const handleMarketDataUpdate = (marketData) => {
-      console.log('📡 Received market data update:', marketData);
-      
       // Update monitored symbols with live LTP
       setMonitoredSymbols(prevSymbols => {
         return prevSymbols.map(symbol => {
           const liveQuote = marketData.find(quote => quote.symbol === symbol.symbol);
           if (liveQuote) {
-            console.log(`✅ Updated ${symbol.symbol} LTP: ${liveQuote.ltp}`);
             return {
               ...symbol,
               currentLTP: liveQuote.ltp,
@@ -162,111 +128,105 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
         });
       });
 
-      // Update market data cache for IndexCard components
-      marketData.forEach(quote => {
-        // Convert symbol to indexName for display
-        let indexName = quote.symbol;
-        if (quote.symbol.includes('NIFTY50-INDEX')) {
-          indexName = 'NIFTY';
-        } else if (quote.symbol.includes('NIFTYBANK-INDEX')) {
-          indexName = 'BANKNIFTY';
-        } else if (quote.symbol.includes('SENSEX-INDEX')) {
-          indexName = 'SENSEX';
-        } else {
-          // For stocks and commodities, extract the name part and map to original names
-          const parts = quote.symbol.split(':');
-          if (parts.length > 1) {
-            let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
-            
-            // Map the extracted name back to the original frontend symbol names
-            const symbolMapping = {
-              // Stocks - map backend symbols to frontend names
-              'TATASTEEL': 'TATASTEEL',
-              'HINDALCO': 'HINDALCO',
-              'SBIN': 'SBIN',
-              'ADANIPORTS': 'ADANIPORTS',
-              'WIPRO': 'WIPRO',
-              'GRASIM': 'GRASIM',
-              'HCLTECH': 'HCLTECH',
-              'BPCL': 'BPCL',
-              'M_M': 'M_M',
-              'COALINDIA': 'COALINDIA',
-              'SBILIFE': 'SBILIFE',
-              'BAJFINANCE': 'BAJFINANCE',
-              'BHARTIARTL': 'BHARTIARTL',
-              'DRREDDY': 'DRREDDY',
-              'HDFCBANK': 'HDFCBANK',
-              'HEROMOTOCO': 'HEROMOTOCO',
-              'ONGC': 'ONGC',
-              'SUNPHARMA': 'SUNPHARMA',
-              'APOLLOHOSP': 'APOLLOHOSP',
-              'ICICIBANK': 'ICICIBANK',
-              
-              // Commodities - map both expiry months to the same frontend name
-              'GOLD25AUGFUT': 'GOLD',
-              'GOLD25JULFUT': 'GOLD',
-              'SILVER25AUGFUT': 'SILVER',
-              'SILVER25JULFUT': 'SILVER',
-              'CRUDEOIL25AUGFUT': 'CRUDEOIL',
-              'CRUDEOIL25JULFUT': 'CRUDEOIL',
-              'COPPER25AUGFUT': 'COPPER',
-              'COPPER25JULFUT': 'COPPER',
-              'NICKEL25AUGFUT': 'NICKEL',
-              'NICKEL25JULFUT': 'NICKEL'
-            };
-            
-            // Use the mapping if available, otherwise use the extracted name
-            indexName = symbolMapping[extractedName] || extractedName;
-          }
-        }
-
-        // Update the market data cache with the proper format
-        const formattedData = {
-          indexName: indexName,
-          spotData: {
-            ltp: quote.ltp,
-            change: quote.change,
-            changePercent: quote.changePercent,
-            open: quote.open,
-            high: quote.high,
-            low: quote.low,
-            close: quote.close,
-            volume: quote.volume,
-            timestamp: new Date(quote.timestamp).toISOString()
-          }
-        };
-
-        // Store in a global cache that IndexCard components can access
-        if (!window.marketDataCache) {
-          window.marketDataCache = new Map();
-        }
-        
-        // For commodities, only update if we have valid data (non-zero LTP)
-        const existingData = window.marketDataCache.get(indexName);
-        if (existingData && (indexName === 'GOLD' || indexName === 'SILVER' || indexName === 'CRUDEOIL' || indexName === 'COPPER' || indexName === 'NICKEL')) {
-          // Only update if the new data has valid LTP (non-zero)
-          if (quote.ltp && quote.ltp > 0) {
-            window.marketDataCache.set(indexName, formattedData);
-            console.log(`📊 Updated cache for ${indexName} (from ${quote.symbol}) with valid LTP:`, formattedData.spotData.ltp);
+              // Update market data cache for IndexCard components
+        marketData.forEach(quote => {
+          // Convert symbol to indexName for display
+          let indexName = quote.symbol;
+          if (quote.symbol.includes('NIFTY50-INDEX')) {
+            indexName = 'NIFTY';
+          } else if (quote.symbol.includes('NIFTYBANK-INDEX')) {
+            indexName = 'BANKNIFTY';
+          } else if (quote.symbol.includes('SENSEX-INDEX')) {
+            indexName = 'SENSEX';
           } else {
-            console.log(`⚠️ Skipping update for ${indexName} (from ${quote.symbol}) due to invalid LTP:`, quote.ltp);
+            // For stocks and commodities, extract the name part and map to original names
+            const parts = quote.symbol.split(':');
+            if (parts.length > 1) {
+              let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
+              
+              // Map the extracted name back to the original frontend symbol names
+              const symbolMapping = {
+                // Stocks - map backend symbols to frontend names
+                'TATASTEEL': 'TATASTEEL',
+                'HINDALCO': 'HINDALCO',
+                'SBIN': 'SBIN',
+                'ADANIPORTS': 'ADANIPORTS',
+                'WIPRO': 'WIPRO',
+                'GRASIM': 'GRASIM',
+                'HCLTECH': 'HCLTECH',
+                'BPCL': 'BPCL',
+                'M_M': 'M_M',
+                'COALINDIA': 'COALINDIA',
+                'SBILIFE': 'SBILIFE',
+                'BAJFINANCE': 'BAJFINANCE',
+                'BHARTIARTL': 'BHARTIARTL',
+                'DRREDDY': 'DRREDDY',
+                'HDFCBANK': 'HDFCBANK',
+                'HEROMOTOCO': 'HEROMOTOCO',
+                'ONGC': 'ONGC',
+                'SUNPHARMA': 'SUNPHARMA',
+                'APOLLOHOSP': 'APOLLOHOSP',
+                'ICICIBANK': 'ICICIBANK',
+                
+                // Commodities - map both expiry months to the same frontend name
+                'GOLD25AUGFUT': 'GOLD',
+                'GOLD25JULFUT': 'GOLD',
+                'SILVER25AUGFUT': 'SILVER',
+                'SILVER25JULFUT': 'SILVER',
+                'CRUDEOIL25AUGFUT': 'CRUDEOIL',
+                'CRUDEOIL25JULFUT': 'CRUDEOIL',
+                'COPPER25AUGFUT': 'COPPER',
+                'COPPER25JULFUT': 'COPPER',
+                'NICKEL25AUGFUT': 'NICKEL',
+                'NICKEL25JULFUT': 'NICKEL'
+              };
+              
+              // Use the mapping if available, otherwise use the extracted name
+              indexName = symbolMapping[extractedName] || extractedName;
+            }
           }
-        } else {
-          // For non-commodities, always update
-          window.marketDataCache.set(indexName, formattedData);
-          console.log(`📊 Updated cache for ${indexName} (from ${quote.symbol}):`, formattedData.spotData.ltp);
-        }
-      });
+
+          // Update the market data cache with the proper format
+          const formattedData = {
+            indexName: indexName,
+            spotData: {
+              ltp: quote.ltp,
+              change: quote.change,
+              changePercent: quote.changePercent,
+              open: quote.open,
+              high: quote.high,
+              low: quote.low,
+              close: quote.close,
+              volume: quote.volume,
+              timestamp: new Date(quote.timestamp).toISOString()
+            }
+          };
+
+          // Store in a global cache that IndexCard components can access
+          if (!window.marketDataCache) {
+            window.marketDataCache = new Map();
+          }
+          
+          // For commodities, only update if we have valid data (non-zero LTP)
+          const existingData = window.marketDataCache.get(indexName);
+          if (existingData && (indexName === 'GOLD' || indexName === 'SILVER' || indexName === 'CRUDEOIL' || indexName === 'COPPER' || indexName === 'NICKEL')) {
+            // Only update if the new data has valid LTP (non-zero)
+            if (quote.ltp && quote.ltp > 0) {
+              window.marketDataCache.set(indexName, formattedData);
+            }
+          } else {
+            // For non-commodities, always update
+            window.marketDataCache.set(indexName, formattedData);
+          }
+        });
     };
 
     // Register the callback for market data updates
     onMarketData(handleMarketDataUpdate);
 
-    console.log('📡 Subscribed to WebSocket market data updates');
-
     // Cleanup function
     return () => {
-      console.log('📡 Unsubscribed from WebSocket market data updates');
+      // Cleanup handled by service
     };
   }, []);
 
@@ -274,7 +234,6 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   useEffect(() => {
     if (monitoredSymbols.length > 0) {
       const symbolNames = monitoredSymbols.map(s => s.symbol).filter(Boolean);
-      console.log('📡 Subscribing to WebSocket updates for monitored symbols:', symbolNames);
       
       const subscribeToSymbols = async () => {
         try {

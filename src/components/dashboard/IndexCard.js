@@ -10,23 +10,18 @@ const IndexCard = ({ data, loading = false, index = 0, compact = false, mini = f
       const cachedData = window.marketDataCache.get(data.indexName);
       if (cachedData && cachedData.spotData) {
         setLiveData(cachedData);
-        console.log(`📊 IndexCard ${data.indexName} using live data:`, cachedData.spotData.ltp);
       }
     }
     
-    // Set up interval to check for updates
+    // Set up interval to check for updates (reduced frequency)
     const interval = setInterval(() => {
       if (data && data.indexName && window.marketDataCache) {
         const cachedData = window.marketDataCache.get(data.indexName);
         if (cachedData && cachedData.spotData) {
           setLiveData(cachedData);
-          // Only log occasionally to avoid spam
-          if (Math.random() < 0.1) { // 10% chance to log
-            console.log(`📊 IndexCard ${data.indexName} updated with live data:`, cachedData.spotData.ltp);
-          }
         }
       }
-    }, 1000); // Check every second
+    }, 2000); // Check every 2 seconds (reduced from 1 second)
     
     return () => clearInterval(interval);
   }, [data?.indexName]);

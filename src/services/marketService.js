@@ -696,24 +696,26 @@ class MarketService {
     if (this.queueTimer) {
       clearInterval(this.queueTimer);
     }
-    // Fetch all symbols every 5 seconds
+    // Fetch all symbols every 0.5 seconds from backend
     this.queueTimer = setInterval(async () => {
       try {
-        const symbols = await this.loadAllSymbols();
-        const allData = await this.fetchMarketData(symbols);
-        allData.forEach(item => {
-          this.marketDataCache.set(item.symbol, {
-            ...item,
-            indexName: item.indexName || item.symbol || item.name,
-            dataType: 'all',
-            lastUpdated: Date.now()
+        const response = await api.get('/market/data/all');
+        if (response.data.success) {
+          const allData = response.data.data;
+          allData.forEach(item => {
+            this.marketDataCache.set(item.symbol, {
+              ...item,
+              indexName: item.indexName || item.symbol || item.name,
+              dataType: 'all',
+              lastUpdated: Date.now()
+            });
           });
-        });
-        this.notifyDataUpdate();
+          this.notifyDataUpdate();
+        }
       } catch (error) {
-        console.error('❌ Error in periodic ALL market data fetch:', error);
+        console.error('❌ Error in periodic market data fetch:', error.message);
       }
-    }, 5000);
+    }, 500); // 0.5 seconds
   }
 
   // Get formatted market time
