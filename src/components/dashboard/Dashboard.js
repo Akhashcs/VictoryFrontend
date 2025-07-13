@@ -122,8 +122,12 @@ const Dashboard = () => {
         // refreshServerStatus already handles setting the status
       }
 
-      // Load market data
-      await loadMarketData();
+      // Only load market data if server is running
+      if (serverStatus === 'running') {
+        await loadMarketData();
+      } else {
+        console.log('[Dashboard] Server not running, skipping market data load');
+      }
 
       // Update market status (local calculation)
       try {
@@ -136,6 +140,7 @@ const Dashboard = () => {
 
       setLoading(false);
     } catch (error) {
+      console.error('[Dashboard] Error loading dashboard data:', error);
       setLoading(false);
     }
   };
@@ -230,24 +235,44 @@ const Dashboard = () => {
     }
   };
 
-  // Manual refresh for server status with retry
+  // Manual refresh for server status with retry and ping
   const refreshServerStatus = async () => {
     try {
-      setServerStatus('loading'); // Add a loading state to StatusIndicator
+      setServerStatus('loading');
+      
+      // First, try to ping the server to wake it up if it's inactive
+      console.log('[Dashboard] Attempting to ping server...');
+      const pingSuccess = await MarketService.pingServer();
+      
+      if (pingSuccess) {
+        console.log('[Dashboard] Server ping successful, checking health...');
+        // Wait a moment for the server to fully wake up
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else {
+        console.log('[Dashboard] Server ping failed, proceeding with health check...');
+      }
+      
       // Try up to 3 times with increasing delay
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const serverHealth = await MarketService.checkServerHealth();
           setServerStatus(serverHealth);
           console.log('[Dashboard] Server health refreshed:', serverHealth);
-          // Manual refresh of index data (even if market is closed)
-          await MarketService.manualRefresh();
+          
+          // If server is now running, reload market data
+          if (serverHealth === 'running') {
+            console.log('[Dashboard] Server is running, reloading market data...');
+            await loadMarketData();
+            // Manual refresh of index data
+            await MarketService.manualRefresh();
+          }
+          
           return; // Success, exit the function
         } catch (error) {
           console.log(`[Dashboard] Server check attempt ${attempt + 1} failed:`, error);
           if (attempt < 2) {
-            // Wait before retrying (500ms, then 1000ms)
-            await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+            // Wait before retrying (1000ms, then 2000ms)
+            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
           }
         }
       }
@@ -384,8 +409,39 @@ const Dashboard = () => {
       {/* Body */}
       <main className="flex-1">
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 mt-6">
+          {/* Server Offline Message */}
+          {serverStatus === 'stopped' && (
+            <div className="text-center py-12 mb-6">
+              <div className="w-24 h-24 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              
+              <h1 className="text-3xl font-bold text-white mb-4">
+                Server Temporarily Offline
+              </h1>
+              
+              <p className="text-slate-400 text-lg max-w-2xl mx-auto mb-6">
+                The trading server is currently inactive. Click the refresh icon in the header to wake it up.
+              </p>
+              
+              <div className="flex items-center justify-center gap-4">
+                <button
+                  onClick={refreshServerStatus}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Wake Up Server
+                </button>
+              </div>
+            </div>
+          )}
+          
           {/* Index Cards */}
-          {fyersStatus.connected ? (
+          {fyersStatus.connected && serverStatus === 'running' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
               {indicesData.map((indexData, idx) => (
                 <IndexCard 
@@ -407,6 +463,16 @@ const Dashboard = () => {
                   <p className="text-slate-400 text-sm">Market data will appear here when available</p>
                 </div>
               )}
+            </div>
+          ) : fyersStatus.connected && serverStatus !== 'stopped' ? (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-slate-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </div>
+              <h3 className="text-white font-semibold mb-2">Connecting to Server</h3>
+              <p className="text-slate-400 text-sm">Please wait while we connect to the trading server...</p>
             </div>
           ) : (
             <div className="text-center py-12">
@@ -431,8 +497,8 @@ const Dashboard = () => {
             </div>
           )}
 
-          {/* Additional Trading Cards - Only show when Fyers is connected */}
-          {fyersStatus.connected && (
+          {/* Additional Trading Cards - Only show when Fyers is connected and server is running */}
+          {fyersStatus.connected && serverStatus === 'running' && (
             <>
               {/* Trading Interface - Full Width */}
               <TradingInterface 
