@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Eye, X, TrendingUp, TrendingDown, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-react';
+import { DollarSign, Eye, X, TrendingUp, TrendingDown, CheckCircle, XCircle, AlertCircle, Clock, RefreshCw } from 'lucide-react';
 import TradeService from '../../services/tradeService';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -13,6 +13,7 @@ const TradeLogService = {
 const TradeLog = () => {
   const [logs, setLogs] = useState([]);
   const [showAll, setShowAll] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   // Safely get user from auth context
   let user = null;
@@ -23,19 +24,21 @@ const TradeLog = () => {
     console.warn('[TradeLog] Auth context not available:', error);
   }
 
+  const fetchLogs = async () => {
+    console.log('[TradeLog] Fetching today\'s logs...');
+    const todayLogs = await TradeLogService.getTodayLogs();
+    console.log('[TradeLog] Received logs:', todayLogs.length, 'entries');
+    // Deduplicate logs by orderId and action, prioritizing FYERS logs
+    const dedupedLogs = deduplicateLogs(todayLogs);
+    setLogs(dedupedLogs);
+  };
+
   useEffect(() => {
     let isMounted = true;
-    const fetchLogs = async () => {
-      console.log('[TradeLog] Fetching today\'s logs...');
-      const todayLogs = await TradeLogService.getTodayLogs();
-      console.log('[TradeLog] Received logs:', todayLogs.length, 'entries');
-      if (isMounted) {
-        // Deduplicate logs by orderId and action, prioritizing FYERS logs
-        const dedupedLogs = deduplicateLogs(todayLogs);
-        setLogs(dedupedLogs);
-      }
+    const loadLogs = async () => {
+      await fetchLogs();
     };
-    fetchLogs();
+    loadLogs();
     return () => {
       isMounted = false;
     };
@@ -94,6 +97,18 @@ const TradeLog = () => {
     return result.sort((a, b) => new Date(b.timestamp || b.createdAt) - new Date(a.timestamp || a.createdAt));
   };
 
+  // Handle manual refresh
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchLogs();
+    } catch (error) {
+      console.error('[TradeLog] Error refreshing logs:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // Listen for real-time order updates from backend
   // useEffect(() => {
   //   function handleOrderUpdate(order) {
@@ -119,12 +134,27 @@ const TradeLog = () => {
           <DollarSign className="w-5 h-5 text-brand" />
           Trade Logs
         </h3>
-        <button
-          onClick={() => setShowAll(true)}
-          className="px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand-light text-xs font-bold rounded-md transition-colors"
-        >
-          View All Trades
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 ${
+              isRefreshing 
+                ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                : 'bg-brand/10 hover:bg-brand/20 text-brand-light'
+            }`}
+            title="Refresh trade logs"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button
+            onClick={() => setShowAll(true)}
+            className="px-3 py-1.5 bg-brand/10 hover:bg-brand/20 text-brand-light text-xs font-bold rounded-md transition-colors"
+          >
+            View All Trades
+          </button>
+        </div>
       </div>
       <TradeLogTable logs={logs} />
       {showAll && <AllTradesModal onClose={() => setShowAll(false)} deduplicateLogs={deduplicateLogs} />}
@@ -183,26 +213,41 @@ const AllTradesModal = ({ onClose, deduplicateLogs }) => {
   const [search, setSearch] = useState('');
   const [date, setDate] = useState('');
   const [actionType, setActionType] = useState('ALL');
-  const [sourceType, setSourceType] = useState('ALL');  // Added source filter
+  const [sourceType, setSourceType] = useState('FYERS');  // Changed default to FYERS
   const [filteredLogs, setFilteredLogs] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const fetchLogs = async () => {
+    console.log('[AllTradesModal] Fetching historic logs...');
+    const allLogs = await TradeLogService.getHistoricLogs();
+    console.log('[AllTradesModal] Received logs:', allLogs.length, 'entries');
+    // Deduplicate logs by orderId and action, prioritizing FYERS logs
+    const dedupedLogs = deduplicateLogs(allLogs);
+    setHistoricLogs(dedupedLogs);
+  };
 
   useEffect(() => {
     let isMounted = true;
-    const fetchLogs = async () => {
-      console.log('[AllTradesModal] Fetching historic logs...');
-      const allLogs = await TradeLogService.getHistoricLogs();
-      console.log('[AllTradesModal] Received logs:', allLogs.length, 'entries');
-      if (isMounted) {
-        // Deduplicate logs by orderId and action, prioritizing FYERS logs
-        const dedupedLogs = deduplicateLogs(allLogs);
-        setHistoricLogs(dedupedLogs);
-      }
+    const loadLogs = async () => {
+      await fetchLogs();
     };
-    fetchLogs();
+    loadLogs();
     return () => {
       isMounted = false;
     };
   }, [deduplicateLogs]);
+
+  // Handle manual refresh for AllTradesModal
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await fetchLogs();
+    } catch (error) {
+      console.error('[AllTradesModal] Error refreshing logs:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     let logs = [...historicLogs];
@@ -244,7 +289,22 @@ const AllTradesModal = ({ onClose, deduplicateLogs }) => {
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <Eye className="w-6 h-6 text-brand" /> All Trade Logs
         </h2>
-        <button onClick={onClose} className="p-2 text-slate-500 hover:text-red-500 rounded-full"><X /></button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className={`px-3 py-1.5 rounded-md transition-colors text-xs font-bold flex items-center gap-1 ${
+              isRefreshing 
+                ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                : 'bg-brand/10 hover:bg-brand/20 text-brand-light'
+            }`}
+            title="Refresh trade logs"
+          >
+            <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button onClick={onClose} className="p-2 text-slate-500 hover:text-red-500 rounded-full"><X /></button>
+        </div>
       </div>
       {/* KPIs & Filters */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 border-b border-slate-700/50 bg-slate-900/95 sticky top-[72px] z-10">
@@ -304,8 +364,8 @@ const AllTradesModal = ({ onClose, deduplicateLogs }) => {
             onChange={e => setSourceType(e.target.value)}
             className="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand"
           >
-            <option value="ALL">All Sources</option>
             <option value="FYERS">Fyers Only</option>
+            <option value="ALL">All Sources</option>
             <option value="APP">App Only</option>
           </select>
         </div>
