@@ -566,8 +566,8 @@ class MarketService {
     
     // If cache is empty, do initial load
     if (this.marketDataCache.size === 0) {
-      // Start the intelligent fetching system
-      this.startIntelligentFetching();
+      // Start the intelligent fetching system for all symbols
+      this.startIntelligentFetchingAll();
       // Do initial bulk fetch for immediate display
       try {
         console.log('📊 Initial market data fetch...');
@@ -716,6 +716,15 @@ class MarketService {
         console.error('❌ Error in periodic market data fetch:', error.message);
       }
     }, 500); // 0.5 seconds
+  }
+
+  // Stop intelligent fetching for all symbols
+  static stopIntelligentFetchingAll() {
+    if (this.queueTimer) {
+      clearInterval(this.queueTimer);
+      this.queueTimer = null;
+      console.log('[MarketService] Stopped intelligent fetching for all symbols');
+    }
   }
 
   // Get formatted market time
@@ -870,7 +879,11 @@ class MarketService {
 
   // Cleanup method
   static cleanup() {
-    this.stopIntelligentFetching();
+    // Stop the polling timer
+    if (this.queueTimer) {
+      clearInterval(this.queueTimer);
+      this.queueTimer = null;
+    }
     if (this.marketDataCache && typeof this.marketDataCache.clear === 'function') {
       this.marketDataCache.clear();
     }
