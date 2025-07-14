@@ -1,30 +1,17 @@
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import MarketService from '../../services/marketService';
 
 const IndexCard = ({ data, loading = false, index = 0, compact = false, mini = false }) => {
-  // Check for live data from WebSocket cache
-  const [liveData, setLiveData] = React.useState(null);
+  // Use the data passed from parent component (which gets updated via subscription)
+  const [liveData, setLiveData] = React.useState(data);
   
   React.useEffect(() => {
-    if (data && data.indexName && window.marketDataCache) {
-      const cachedData = window.marketDataCache.get(data.indexName);
-      if (cachedData && cachedData.spotData) {
-        setLiveData(cachedData);
-      }
+    // Update local state when data prop changes
+    if (data) {
+      setLiveData(data);
     }
-    
-    // Set up interval to check for updates (reduced frequency)
-    const interval = setInterval(() => {
-      if (data && data.indexName && window.marketDataCache) {
-        const cachedData = window.marketDataCache.get(data.indexName);
-        if (cachedData && cachedData.spotData) {
-          setLiveData(cachedData);
-        }
-      }
-    }, 2000); // Check every 2 seconds (reduced from 1 second)
-    
-    return () => clearInterval(interval);
-  }, [data?.indexName]);
+  }, [data]);
 
   if (loading) {
     return (

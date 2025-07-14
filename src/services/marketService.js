@@ -696,7 +696,7 @@ class MarketService {
     if (this.queueTimer) {
       clearInterval(this.queueTimer);
     }
-    // Fetch all symbols every 0.5 seconds from backend
+    // Fetch all symbols every 2 seconds from backend (reduced frequency to avoid rate limits)
     this.queueTimer = setInterval(async () => {
       try {
         const response = await api.get('/market/data/all');
@@ -715,7 +715,7 @@ class MarketService {
       } catch (error) {
         console.error('❌ Error in periodic market data fetch:', error.message);
       }
-    }, 500); // 0.5 seconds
+    }, 2000); // 2 seconds
   }
 
   // Stop intelligent fetching for all symbols
