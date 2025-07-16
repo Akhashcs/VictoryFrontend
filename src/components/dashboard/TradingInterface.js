@@ -494,7 +494,7 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                       ) : (
                         Object.entries(symbolConfigs).map(([key, config]) => (
                           <option key={key} value={key} className="text-white bg-slate-700">
-                            {config.name}
+                            {config.symbolName}
                           </option>
                         ))
                       )}

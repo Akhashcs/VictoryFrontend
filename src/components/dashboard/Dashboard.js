@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { setTokenExpirationHandler } from '../../services/api';
 import FyersModal from './FyersModal';
+import TokenExpirationModal from '../common/TokenExpirationModal';
+import MaintenanceOverlay from '../common/MaintenanceOverlay';
+import ToastContainer from '../common/ToastContainer';
+import TradingInterface from './TradingInterface';
+import MonitoringDashboard from './MonitoringDashboard';
+import TradeLog from './TradeLog';
 import IndexCard from './IndexCard';
 import StatusIndicator from './StatusIndicator';
-import MonitoringDashboard from './MonitoringDashboard';
-import TradingInterface from './TradingInterface';
-import TradeLog from './TradeLog';
-import NotificationsIcon from './NotificationsIcon';
-import MaintenanceOverlay from '../common/MaintenanceOverlay';
-import TokenExpirationModal from '../common/TokenExpirationModal';
-import ToastContainer from '../common/ToastContainer';
 import FyersService from '../../services/fyersService';
 import MarketService from '../../services/marketService';
-import api, { setTokenExpirationHandler } from '../../services/api';
+import SymbolConfigService from '../../services/symbolConfigService';
+import api from '../../services/api';
 import logo from '../../assets/logo.svg';
 import { Menu } from '@headlessui/react';
 import { ChevronDown, LogOut, DollarSign, Loader2 } from 'lucide-react';
@@ -89,15 +90,159 @@ const Dashboard = () => {
 
   // Load market data when component mounts and when Fyers status changes
   useEffect(() => {
+    console.log('[Dashboard] Setting up market data streaming...');
+    
     const unsubscribe = MarketService.subscribeToUpdates((updatedData) => {
-      console.log('[Dashboard] Received market data update:', updatedData);
+      console.log('[Dashboard] Received market data update from MarketService:', updatedData);
       setIndicesData(updatedData);
     });
     
     // Always load market data regardless of Fyers connection status
     loadMarketData();
 
+    // Start WebSocket-based market data streaming
+    const startWebSocketStreaming = async () => {
+      try {
+        console.log('[Dashboard] Starting WebSocket market data streaming...');
+        
+        // Subscribe to WebSocket market data updates
+        const { onMarketData } = await import('../../services/api');
+        
+        onMarketData((marketData) => {
+          console.log('[Dashboard] WebSocket market data received:', marketData);
+          
+          if (!marketData || marketData.length === 0) {
+            console.log('[Dashboard] No market data received from WebSocket');
+            return;
+          }
+          
+          // Process and format the market data for IndexCard components
+          const processMarketData = async () => {
+            try {
+              // Get symbol configurations for mapping
+              const symbolConfigs = await SymbolConfigService.getSymbolConfigs();
+              
+              const formattedData = marketData.map(quote => {
+                // Find symbol configuration for this quote
+                const config = symbolConfigs.find(c => c.symbolInput === quote.symbol);
+                
+                // Use symbolName from config if available, otherwise use a fallback
+                let indexName = config ? config.symbolName : quote.symbol;
+                
+                // Fallback mapping for common patterns if no config found
+                if (!config) {
+                  if (quote.symbol.includes('NIFTY50-INDEX')) {
+                    indexName = 'NIFTY';
+                  } else if (quote.symbol.includes('NIFTYBANK-INDEX')) {
+                    indexName = 'BANKNIFTY';
+                  } else if (quote.symbol.includes('SENSEX-INDEX')) {
+                    indexName = 'SENSEX';
+                  } else {
+                    // For stocks and commodities, extract the name part
+                    const parts = quote.symbol.split(':');
+                    if (parts.length > 1) {
+                      let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '').replace(/25[A-Z]{3}FUT/, '');
+                      indexName = extractedName;
+                    }
+                  }
+                }
+
+                // Return formatted data for IndexCard
+                return {
+                  indexName: indexName,
+                  symbol: quote.symbol,
+                  symbolConfig: config, // Include the full config for reference
+                  spotData: {
+                    ltp: quote.ltp,
+                    change: quote.change,
+                    changePercent: quote.changePercent,
+                    open: quote.open,
+                    high: quote.high,
+                    low: quote.low,
+                    close: quote.close,
+                    volume: quote.volume,
+                    timestamp: new Date(quote.timestamp).toISOString()
+                  }
+                };
+              });
+              
+              console.log('[Dashboard] Formatted market data:', formattedData);
+              
+              // Update the state with real-time data
+              setIndicesData(formattedData);
+            } catch (error) {
+              console.error('[Dashboard] Error processing market data:', error);
+            }
+          };
+          
+          // Process the market data
+          processMarketData();
+        });
+        
+        console.log('[Dashboard] WebSocket market data streaming started successfully');
+      } catch (error) {
+        console.error('[Dashboard] Error starting WebSocket streaming:', error);
+      }
+    };
+    
+    startWebSocketStreaming();
+
+    // Test WebSocket connection without authentication
+    const testWebSocketConnection = () => {
+      try {
+        console.log('[Dashboard] Testing WebSocket connection...');
+        const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+        const wsUrl = isProduction 
+          ? `${process.env.REACT_APP_WS_URL}`
+          : (process.env.REACT_APP_WS_URL || 'ws://localhost:5000');
+        
+        const testWs = new WebSocket(wsUrl);
+        
+        testWs.onopen = () => {
+          console.log('[Dashboard] Test WebSocket connected successfully');
+          // Send a test message
+          testWs.send(JSON.stringify({
+            type: 'auth',
+            token: 'test-token'
+          }));
+        };
+        
+        testWs.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('[Dashboard] Test WebSocket received:', data.type);
+            
+            if (data.type === 'marketData') {
+              console.log('[Dashboard] Test WebSocket received market data:', data.data.length, 'symbols');
+            }
+          } catch (error) {
+            console.error('[Dashboard] Error parsing test WebSocket message:', error);
+          }
+        };
+        
+        testWs.onerror = (error) => {
+          console.error('[Dashboard] Test WebSocket error:', error);
+        };
+        
+        testWs.onclose = () => {
+          console.log('[Dashboard] Test WebSocket closed');
+        };
+        
+        // Close test connection after 5 seconds
+        setTimeout(() => {
+          testWs.close();
+        }, 5000);
+        
+      } catch (error) {
+        console.error('[Dashboard] Error testing WebSocket connection:', error);
+      }
+    };
+    
+    // Run the test
+    testWebSocketConnection();
+
     return () => {
+      console.log('[Dashboard] Cleaning up market data streaming...');
       if (unsubscribe) {
         unsubscribe();
       }

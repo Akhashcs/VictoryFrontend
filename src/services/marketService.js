@@ -382,45 +382,8 @@ class MarketService {
             if (parts.length > 1) {
               let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
               
-              // Map the extracted name back to the original frontend symbol names
-              const symbolMapping = {
-                // Stocks
-                'ADANIPORTS': 'RELIANCE',
-                'APOLLOHOSP': 'TCS', 
-                'BAJFINANCE': 'INFY',
-                'BHARTIARTL': 'HDFC',
-                'BPCL': 'ICICIBANK',
-                'COALINDIA': 'RELIANCE',
-                'DRREDDY': 'TCS',
-                'GRASIM': 'INFY',
-                'HCLTECH': 'HDFC',
-                'HDFCBANK': 'ICICIBANK',
-                'HEROMOTOCO': 'RELIANCE',
-                'HINDALCO': 'TCS',
-                'ICICIBANK': 'ICICIBANK', // This one matches
-                'ONGC': 'INFY',
-                'SBILIFE': 'HDFC',
-                'SBIN': 'ICICIBANK',
-                'SUNPHARMA': 'RELIANCE',
-                'TATASTEEL': 'TCS',
-                'WIPRO': 'INFY',
-                
-                // Commodities
-                'GOLD25AUGFUT': 'GOLD',
-                'GOLD25JULFUT': 'GOLD',
-                'SILVER25SEPFUT': 'SILVER',
-                'SILVER25AUGFUT': 'SILVER',
-                'SILVER25JULFUT': 'SILVER',
-                'CRUDEOIL25AUGFUT': 'CRUDEOIL',
-                'CRUDEOIL25JULFUT': 'CRUDEOIL',
-                'COPPER25AUGFUT': 'COPPER',
-                'COPPER25JULFUT': 'COPPER',
-                'NICKEL25AUGFUT': 'NICKEL',
-                'NICKEL25JULFUT': 'NICKEL'
-              };
-              
-              // Use the mapping if available, otherwise use the extracted name
-              indexName = symbolMapping[extractedName] || extractedName;
+              // Use the extracted name directly - no hardcoded mappings
+              indexName = extractedName;
             }
           }
           
@@ -585,50 +548,13 @@ class MarketService {
           } else if (item.symbol.includes('SENSEX-INDEX')) {
             indexName = 'SENSEX';
           } else {
-            // For stocks and commodities, extract the name part and map to original names
+            // For stocks and commodities, extract the name part
             const parts = item.symbol.split(':');
             if (parts.length > 1) {
               let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '');
               
-              // Map the extracted name back to the original frontend symbol names
-              const symbolMapping = {
-                // Stocks
-                'ADANIPORTS': 'RELIANCE',
-                'APOLLOHOSP': 'TCS', 
-                'BAJFINANCE': 'INFY',
-                'BHARTIARTL': 'HDFC',
-                'BPCL': 'ICICIBANK',
-                'COALINDIA': 'RELIANCE',
-                'DRREDDY': 'TCS',
-                'GRASIM': 'INFY',
-                'HCLTECH': 'HDFC',
-                'HDFCBANK': 'ICICIBANK',
-                'HEROMOTOCO': 'RELIANCE',
-                'HINDALCO': 'TCS',
-                'ICICIBANK': 'ICICIBANK', // This one matches
-                'ONGC': 'INFY',
-                'SBILIFE': 'HDFC',
-                'SBIN': 'ICICIBANK',
-                'SUNPHARMA': 'RELIANCE',
-                'TATASTEEL': 'TCS',
-                'WIPRO': 'INFY',
-                
-                // Commodities
-                'GOLD25AUGFUT': 'GOLD',
-                'GOLD25JULFUT': 'GOLD',
-                'SILVER25SEPFUT': 'SILVER',
-                'SILVER25AUGFUT': 'SILVER',
-                'SILVER25JULFUT': 'SILVER',
-                'CRUDEOIL25AUGFUT': 'CRUDEOIL',
-                'CRUDEOIL25JULFUT': 'CRUDEOIL',
-                'COPPER25AUGFUT': 'COPPER',
-                'COPPER25JULFUT': 'COPPER',
-                'NICKEL25AUGFUT': 'NICKEL',
-                'NICKEL25JULFUT': 'NICKEL'
-              };
-              
-              // Use the mapping if available, otherwise use the extracted name
-              indexName = symbolMapping[extractedName] || extractedName;
+              // Use the extracted name directly - no hardcoded mappings
+              indexName = extractedName;
             }
           }
           
@@ -696,7 +622,29 @@ class MarketService {
     if (this.queueTimer) {
       clearInterval(this.queueTimer);
     }
-    // Fetch all symbols every 2 seconds from backend (reduced frequency to avoid rate limits)
+    
+    console.log('[MarketService] Starting intelligent fetching for all symbols');
+    
+    // Initial fetch
+    try {
+      const response = await api.get('/market/data/all');
+      if (response.data.success) {
+        const allData = response.data.data;
+        allData.forEach(item => {
+          this.marketDataCache.set(item.symbol, {
+            ...item,
+            indexName: item.indexName || item.symbol || item.name,
+            dataType: 'all',
+            lastUpdated: Date.now()
+          });
+        });
+        this.notifyDataUpdate();
+      }
+    } catch (error) {
+      console.error('❌ Error in initial market data fetch:', error.message);
+    }
+    
+    // Reduced polling frequency to 10 seconds to avoid conflicts with WebSocket streaming
     this.queueTimer = setInterval(async () => {
       try {
         const response = await api.get('/market/data/all');
@@ -715,7 +663,7 @@ class MarketService {
       } catch (error) {
         console.error('❌ Error in periodic market data fetch:', error.message);
       }
-    }, 2000); // 2 seconds
+    }, 10000); // 10 seconds - reduced from 2 seconds to avoid conflicts with WebSocket
   }
 
   // Stop intelligent fetching for all symbols
@@ -784,13 +732,25 @@ class MarketService {
         return [];
       }
       
-      console.log('[MarketService] Fetching market data for symbols:', symbols);
-      const response = await api.post('/market/data/batch', { symbols });
-      console.log('[MarketService] Received market data response:', response.data.data.length, 'symbols');
+      // Only log fetching every 30 seconds to reduce verbosity
+      const now = Date.now();
+      if (!this.lastFetchLog || (now - this.lastFetchLog) > 30000) {
+        console.log('[MarketService] Fetching market data for symbols:', symbols);
+        this.lastFetchLog = now;
+      }
       
-      // Debug: log first few symbols to see what we're getting
-      if (response.data.data.length > 0) {
+      const response = await api.post('/market/data/batch', { symbols });
+      
+      // Only log response every 30 seconds to reduce verbosity
+      if (!this.lastResponseLog || (now - this.lastResponseLog) > 30000) {
+        console.log('[MarketService] Received market data response:', response.data.data.length, 'symbols');
+        this.lastResponseLog = now;
+      }
+      
+      // Only log first few symbols every 5 minutes to reduce verbosity
+      if (response.data.data.length > 0 && (!this.lastSymbolsLog || (now - this.lastSymbolsLog) > 300000)) {
         console.log('[MarketService] First 3 symbols received:', response.data.data.slice(0, 3).map(s => ({ symbol: s.symbol, ltp: s.ltp })));
+        this.lastSymbolsLog = now;
       }
       
       return response.data.data;

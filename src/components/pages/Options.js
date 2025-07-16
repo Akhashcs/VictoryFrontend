@@ -15,6 +15,8 @@ import api, { setTokenExpirationHandler } from '../../services/api';
 import { Settings } from 'lucide-react';
 import SymbolConfigService from '../../services/symbolConfigService';
 
+let lastWebSocketLog = 0; // For throttling WebSocket logs
+
 const Options = () => {
   const { user } = useAuth();
   const [fyersModalOpen, setFyersModalOpen] = useState(false);
@@ -29,10 +31,7 @@ const Options = () => {
   const [symbolSettingsModalOpen, setSymbolSettingsModalOpen] = useState(false);
   const [symbolConfigs, setSymbolConfigs] = useState([]);
   
-  // Debug effect to track symbol configs changes
-  useEffect(() => {
-    console.log('🔍 Symbol configs changed:', symbolConfigs);
-  }, [symbolConfigs]);
+
   const [symbolsLoading, setSymbolsLoading] = useState(true);
   
   // Header status for trading interface
@@ -92,21 +91,123 @@ const Options = () => {
   // Load and stream all market data (indices, stocks, commodities)
   useEffect(() => {
     let isMounted = true;
+    
+    // Only load market data if Fyers is connected
+    if (!fyersStatus.connected) {
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
+    
     // Initial load
     MarketService.getAllMarketData().then(data => {
       if (isMounted) {
         setAllMarketData(data);
         setLoading(false);
       }
+    }).catch(error => {
+      console.error('[Options] Error loading market data:', error);
+      if (isMounted) {
+        setLoading(false);
+      }
     });
-    // Subscribe to updates
+    
+    // Subscribe to updates from MarketService
     const unsubscribe = MarketService.subscribeToUpdates((updatedData) => {
       if (isMounted) setAllMarketData(updatedData);
     });
+    
+    // Start WebSocket-based market data streaming
+    const startWebSocketStreaming = async () => {
+      try {
+        // Subscribe to WebSocket market data updates
+        const { onMarketData } = await import('../../services/api');
+        
+        onMarketData((marketData) => {
+          // Only log WebSocket data every 30 seconds to reduce verbosity
+          const now = Date.now();
+          if (!lastWebSocketLog || (now - lastWebSocketLog) > 30000) {
+            console.log('[Options] WebSocket market data received:', marketData);
+            lastWebSocketLog = now;
+          }
+          
+          if (!isMounted) return;
+          
+          // Process and format the market data for IndexCard components
+          const processMarketData = async () => {
+            try {
+              // Get symbol configurations for mapping
+              const symbolConfigs = await SymbolConfigService.getSymbolConfigs();
+              
+              const formattedData = marketData.map(quote => {
+                // Find symbol configuration for this quote
+                const config = symbolConfigs.find(c => c.symbolInput === quote.symbol);
+                
+                // Use symbolName from config if available, otherwise use a fallback
+                let indexName = config ? config.symbolName : quote.symbol;
+                
+                // Fallback mapping for common patterns if no config found
+                if (!config) {
+                  if (quote.symbol.includes('NIFTY50-INDEX')) {
+                    indexName = 'NIFTY';
+                  } else if (quote.symbol.includes('NIFTYBANK-INDEX')) {
+                    indexName = 'BANKNIFTY';
+                  } else if (quote.symbol.includes('SENSEX-INDEX')) {
+                    indexName = 'SENSEX';
+                  } else {
+                    // For stocks and commodities, extract the name part
+                    const parts = quote.symbol.split(':');
+                    if (parts.length > 1) {
+                      let extractedName = parts[1].replace('-EQ', '').replace('-COMM', '').replace(/25[A-Z]{3}FUT/, '');
+                      indexName = extractedName;
+                    }
+                  }
+                }
+
+                // Return formatted data for IndexCard
+                return {
+                  indexName: indexName,
+                  symbol: quote.symbol,
+                  symbolConfig: config, // Include the full config for reference
+                  spotData: {
+                    ltp: quote.ltp,
+                    change: quote.change,
+                    changePercent: quote.changePercent,
+                    open: quote.open,
+                    high: quote.high,
+                    low: quote.low,
+                    close: quote.close,
+                    volume: quote.volume,
+                    timestamp: new Date(quote.timestamp).toISOString()
+                  }
+                };
+              });
+              
+              // Update the state with real-time data
+              setAllMarketData(formattedData);
+            } catch (error) {
+              console.error('[Options] Error processing market data:', error);
+            }
+          };
+          
+          // Process the market data
+          processMarketData();
+        });
+        
+        console.log('[Options] WebSocket market data streaming started');
+      } catch (error) {
+        console.error('[Options] Error starting WebSocket streaming:', error);
+      }
+    };
+    
+    startWebSocketStreaming();
+    
     return () => {
       isMounted = false;
-      if (unsubscribe) unsubscribe();
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [fyersStatus.connected]);
 
@@ -114,14 +215,11 @@ const Options = () => {
   const loadSymbolConfigs = async () => {
     try {
       setSymbolsLoading(true);
-      console.log('Loading symbol configs...');
-      const symbols = await SymbolConfigService.getAllSymbols();
-      console.log('Loaded symbol configs:', symbols);
-      setSymbolConfigs(symbols);
+      const configs = await SymbolConfigService.getSymbolConfigs();
+      setSymbolConfigs(configs);
+      console.log('[Options] Loaded symbol configs:', configs);
     } catch (error) {
-      console.error('Error loading symbol configs:', error);
-      // Fallback to empty array
-      setSymbolConfigs([]);
+      console.error('[Options] Error loading symbol configs:', error);
     } finally {
       setSymbolsLoading(false);
     }
@@ -144,9 +242,13 @@ const Options = () => {
       console.log('📊 Loading symbol configs...');
       await loadSymbolConfigs();
 
-      // Load market data
-      console.log('📈 Loading market data...');
-      await loadMarketData();
+      // Only load market data if Fyers is connected
+      if (fyersStatus.connected) {
+        console.log('📈 Loading market data...');
+        await loadMarketData();
+      } else {
+        console.log('📈 Skipping market data load - Fyers not connected');
+      }
 
       console.log('✅ loadOptionsData completed');
       setLoading(false);
@@ -243,38 +345,41 @@ const Options = () => {
     loadOptionsData();
   };
 
-  // Helper: get all symbols by type
-  const tabSymbols = SymbolConfigService.getSymbolsByType(symbolConfigs);
+
 
   // Helper: get market data for a symbol (from allMarketData)
-  const getMarketData = (symbol) => {
-    // Try to find by indexName, symbol, or name
-    return allMarketData.find(d => d.indexName === symbol.symbolName || d.symbol === symbol.symbolName || d.indexName === symbol.symbolInput) || {
-      indexName: symbol.symbolName,
-      spotData: { ltp: null, change: null, changePercent: null }
-    };
+  const getMarketData = (symbolConfig) => {
+    // Find market data for this specific symbol
+    const marketData = allMarketData.find(data => 
+      data.symbol === symbolConfig.symbolInput
+    );
+    
+    if (!marketData) {
+      // Return null if no market data found
+      return null;
+    }
+    
+    // Return the market data object directly (it's already formatted correctly)
+    return marketData;
   };
 
   // Convert symbol configs to the format expected by TradingInterface
   const getTradingInterfaceConfigs = () => {
-    console.log('[Options] Creating TradingInterface configs from symbolConfigs:', symbolConfigs);
-    const configs = symbolConfigs.reduce((acc, symbol) => {
-      acc[symbol.symbolName] = {
-        name: symbol.symbolName,
-        symbolInput: symbol.symbolInput, // Add symbolInput for market data lookup
-        lotSize: symbol.strikeInterval || 50, // Use strike interval as lot size
-        defaultTarget: 40, // Default values
+    // Convert symbol configs to the format expected by TradingInterface
+    const configs = {};
+    symbolConfigs.forEach(config => {
+      configs[config.symbolName] = {
+        symbolName: config.symbolName,
+        symbolInput: config.symbolInput,
+        lotSize: config.lotSize || 75,
+        defaultTarget: 40,
         defaultStopLoss: 10,
-        exchange: symbol.tabType === 'index' ? 'NSE' : symbol.tabType === 'commodity' ? 'MCX' : 'NSE',
-        type: symbol.tabType,
-        optionSymbolFormat: symbol.optionSymbolFormat,
-        nextExpiry: symbol.nextExpiry,
-        expiryDate: symbol.expiryDate,
-        strikeInterval: symbol.strikeInterval
+        tabType: config.tabType,
+        optionSymbolFormat: config.optionSymbolFormat,
+        nextExpiry: config.nextExpiry,
+        strikeInterval: config.strikeInterval
       };
-      return acc;
-    }, {});
-    console.log('[Options] Generated TradingInterface configs:', configs);
+    });
     return configs;
   };
 
@@ -329,16 +434,18 @@ const Options = () => {
               </div>
               {/* Cards Grid - always 5 columns, no max-width on card */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                {tabSymbols[marketTab].map((symbol, idx) => (
-                  <div key={symbol.symbolName || symbol.name || idx} className="w-full">
-                    <IndexCard
-                      data={getMarketData(symbol)}
-                      loading={loading}
-                      index={idx}
-                      mini
-                    />
-                  </div>
-                ))}
+                {symbolConfigs
+                  .filter(config => config.tabType === marketTab)
+                  .map((symbol, idx) => (
+                    <div key={symbol.symbolName || symbol.name || idx} className="w-full">
+                      <IndexCard
+                        data={getMarketData(symbol)}
+                        loading={loading}
+                        index={idx}
+                        mini
+                      />
+                    </div>
+                  ))}
               </div>
             </div>
           ) : (
