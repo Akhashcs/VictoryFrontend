@@ -32,6 +32,7 @@ const Dashboard = () => {
   const [fundsError, setFundsError] = useState('');
   const [maintenanceOverlayVisible, setMaintenanceOverlayVisible] = useState(false);
   const [maintenanceStatus, setMaintenanceStatus] = useState('inactive');
+  const [tokenValidationStatus, setTokenValidationStatus] = useState({ isValid: true, lastChecked: null });
   
   // Header status for trading interface
   const [headerStatus, setHeaderStatus] = useState({
@@ -61,10 +62,14 @@ const Dashboard = () => {
     loadDashboardData();
     // Check maintenance status
     checkMaintenanceStatus();
+    // Check token validation status
+    checkTokenValidation();
     // Set up regular status checks
     const statusInterval = setInterval(updateStatus, 10000); // Check status every 10 seconds
     // Check maintenance status every 5 minutes
     const maintenanceInterval = setInterval(checkMaintenanceStatus, 300000);
+    // Check token validation every 15 minutes
+    const tokenValidationInterval = setInterval(checkTokenValidation, 900000);
     
     // Listen for Fyers reconnection events
     const handleFyersReconnection = (event) => {
@@ -82,6 +87,7 @@ const Dashboard = () => {
     return () => {
       clearInterval(statusInterval);
       clearInterval(maintenanceInterval);
+      clearInterval(tokenValidationInterval);
       window.removeEventListener('fyersReconnectionRequired', handleFyersReconnection);
       // Cleanup market service when component unmounts
       MarketService.cleanup();
@@ -390,6 +396,29 @@ const Dashboard = () => {
       }
     } catch (error) {
       console.error('Failed to check maintenance status:', error);
+    }
+  };
+
+  // Check token validation status
+  const checkTokenValidation = async () => {
+    try {
+      const response = await api.get('/token-validation/status');
+      if (response.data.success) {
+        setTokenValidationStatus({
+          isValid: response.data.isValid,
+          lastChecked: new Date(),
+          hasToken: response.data.hasToken,
+          isConnected: response.data.isConnected
+        });
+        
+        // If token is invalid, show Fyers modal
+        if (!response.data.isValid && response.data.hasToken) {
+          console.log('🔄 Token validation failed, showing Fyers modal...');
+          setFyersModalOpen(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking token validation:', error);
     }
   };
 
