@@ -735,7 +735,7 @@ class MarketService {
       // Only log fetching every 30 seconds to reduce verbosity
       const now = Date.now();
       if (!this.lastFetchLog || (now - this.lastFetchLog) > 30000) {
-        console.log('[MarketService] Fetching market data for symbols:', symbols);
+      console.log('[MarketService] Fetching market data for symbols:', symbols);
         this.lastFetchLog = now;
       }
       
@@ -743,7 +743,7 @@ class MarketService {
       
       // Only log response every 30 seconds to reduce verbosity
       if (!this.lastResponseLog || (now - this.lastResponseLog) > 30000) {
-        console.log('[MarketService] Received market data response:', response.data.data.length, 'symbols');
+      console.log('[MarketService] Received market data response:', response.data.data.length, 'symbols');
         this.lastResponseLog = now;
       }
       
