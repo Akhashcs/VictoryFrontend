@@ -388,91 +388,89 @@ const Options = () => {
       <main className="flex-1">
         <div className="w-full max-w-7xl mx-auto px-4 sm:px-6">
           {/* Index Cards Section with Tabs */}
-          {fyersStatus.connected ? (
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-3 sm:p-4 mb-4 mt-4" style={{ marginTop: '1rem', marginBottom: '1rem' }}>
-              {/* Tabs */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex gap-4 sm:gap-6">
+          <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-3 sm:p-4 mb-4 mt-4" style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+            {/* Fyers Connection Status Banner */}
+            {!fyersStatus.connected && (
+              <div className="mb-4 p-3 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                    <span className="text-amber-400 text-sm font-medium">
+                      Fyers connection required for live data
+                    </span>
+                  </div>
                   <button
-                    className={`font-medium text-sm transition-colors border-b-2 ${
-                      marketTab === 'index' 
-                        ? 'text-brand border-brand' 
-                        : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
-                    }`}
-                    onClick={() => setMarketTab('index')}
+                    onClick={() => setFyersModalOpen(true)}
+                    className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded transition-colors"
                   >
-                    Indices
-                  </button>
-                  <button
-                    className={`font-medium text-sm transition-colors border-b-2 ${
-                      marketTab === 'stock' 
-                        ? 'text-brand border-brand' 
-                        : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
-                    }`}
-                    onClick={() => setMarketTab('stock')}
-                  >
-                    Stocks
-                  </button>
-                  <button
-                    className={`font-medium text-sm transition-colors border-b-2 ${
-                      marketTab === 'commodity' 
-                        ? 'text-brand border-brand' 
-                        : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
-                    }`}
-                    onClick={() => setMarketTab('commodity')}
-                  >
-                    Commodities
+                    Connect Fyers
                   </button>
                 </div>
+              </div>
+            )}
+            
+            {/* Tabs */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex gap-4 sm:gap-6">
                 <button
-                  onClick={() => setSymbolSettingsModalOpen(true)}
-                  className="p-1.5 text-slate-400 hover:text-brand transition-colors"
-                  title="Symbol Settings"
+                  className={`font-medium text-sm transition-colors border-b-2 ${
+                    marketTab === 'index' 
+                      ? 'text-brand border-brand' 
+                      : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
+                  }`}
+                  onClick={() => setMarketTab('index')}
                 >
-                  <Settings className="w-4 h-4" />
+                  Indices
+                </button>
+                <button
+                  className={`font-medium text-sm transition-colors border-b-2 ${
+                    marketTab === 'stock' 
+                      ? 'text-brand border-brand' 
+                      : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
+                  }`}
+                  onClick={() => setMarketTab('stock')}
+                >
+                  Stocks
+                </button>
+                <button
+                  className={`font-medium text-sm transition-colors border-b-2 ${
+                    marketTab === 'commodity' 
+                      ? 'text-brand border-brand' 
+                      : 'text-slate-400 border-transparent hover:text-slate-300 hover:border-slate-600'
+                  }`}
+                  onClick={() => setMarketTab('commodity')}
+                >
+                  Commodities
                 </button>
               </div>
-              {/* Cards Grid - always 5 columns, no max-width on card */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                {symbolConfigs
-                  .filter(config => config.tabType === marketTab)
-                  .map((symbol, idx) => (
-                    <div key={symbol.symbolName || symbol.name || idx} className="w-full">
-                      <IndexCard
-                        data={getMarketData(symbol)}
-                        loading={loading}
-                        index={idx}
-                        mini
-                      />
-                    </div>
-                  ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                <span className="text-white font-bold text-3xl">V</span>
-              </div>
-              
-              <h1 className="text-4xl font-bold text-white mb-4">
-                Welcome to Victory Options Trading
-              </h1>
-              
-              <p className="text-slate-400 text-lg max-w-2xl mx-auto mb-8">
-                Connect your Fyers account to start viewing live market data and trading options.
-              </p>
-              
               <button
-                onClick={() => setFyersModalOpen(true)}
-                className="btn-primary text-lg px-8 py-3"
+                onClick={() => setSymbolSettingsModalOpen(true)}
+                className="p-1.5 text-slate-400 hover:text-brand transition-colors"
+                title="Symbol Settings"
               >
-                Connect Fyers Account
+                <Settings className="w-4 h-4" />
               </button>
             </div>
-          )}
+            
+            {/* Cards Grid - always 5 columns, no max-width on card */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+              {symbolConfigs
+                .filter(config => config.tabType === marketTab)
+                .map((symbol, idx) => (
+                  <div key={symbol.symbolName || symbol.name || idx} className="w-full">
+                    <IndexCard
+                      data={getMarketData(symbol)}
+                      loading={loading}
+                      index={idx}
+                      mini
+                    />
+                  </div>
+                ))}
+            </div>
+          </div>
 
-          {/* Additional Trading Cards - Only show when Fyers is connected */}
-          {fyersStatus.connected && (
+          {/* Additional Trading Cards - Show with Fyers connection status */}
+          {fyersStatus.connected ? (
             <>
               {/* Trading Interface - Full Width */}
               <TradingInterface 
@@ -491,6 +489,26 @@ const Options = () => {
               {/* Trade Log - Below Monitoring Dashboard */}
               <TradeLog />
             </>
+          ) : (
+            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6 mb-4">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-2">Trading Interface</h3>
+                <p className="text-slate-400 mb-4">
+                  Connect your Fyers account to access the trading interface and monitoring dashboard.
+                </p>
+                <button
+                  onClick={() => setFyersModalOpen(true)}
+                  className="bg-brand hover:bg-brand/90 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  Connect Fyers Account
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </main>

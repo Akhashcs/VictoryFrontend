@@ -252,10 +252,23 @@ const Dashboard = () => {
   // Load dashboard data
   const loadDashboardData = async () => {
     try {
-      // Load Fyers status
+      // Load Fyers status with token validation
       try {
-      const fyersData = await FyersService.getConnectionStatus();
-      setFyersStatus(fyersData);
+        const fyersData = await FyersService.getConnectionStatus();
+        setFyersStatus(fyersData);
+        
+        // If Fyers is connected, validate the token
+        if (fyersData.connected) {
+          const tokenValidation = await FyersService.validateToken();
+          if (!tokenValidation.valid) {
+            console.log('[Dashboard] Fyers token expired, updating status...');
+            setFyersStatus({ 
+              connected: false, 
+              profileName: null,
+              tokenExpired: true 
+            });
+          }
+        }
       } catch (error) {
         // Don't update state on error to keep existing state
       }
@@ -586,30 +599,52 @@ const Dashboard = () => {
           )}
           
           {/* Index Cards */}
-          {fyersStatus.connected && serverStatus === 'running' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-              {indicesData.map((indexData, idx) => (
-                <IndexCard 
-                  key={indexData.indexName || idx} 
-                  data={indexData} 
-                  loading={loading}
-                  index={idx}
-                  compact={true}
-                />
-              ))}
-              {indicesData.length === 0 && !loading && (
-                <div className="col-span-full text-center py-12">
-                  <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
+          {serverStatus === 'running' ? (
+            <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-4 mb-6">
+              {/* Fyers Connection Status Banner */}
+              {!fyersStatus.connected && (
+                <div className="mb-4 p-3 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                      <span className="text-amber-400 text-sm font-medium">
+                        Fyers connection required for live data
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setFyersModalOpen(true)}
+                      className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1 rounded transition-colors"
+                    >
+                      Connect Fyers
+                    </button>
                   </div>
-                  <h3 className="text-white font-semibold mb-2">No Market Data</h3>
-                  <p className="text-slate-400 text-sm">Market data will appear here when available</p>
                 </div>
               )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                {indicesData.map((indexData, idx) => (
+                  <IndexCard 
+                    key={indexData.indexName || idx} 
+                    data={indexData} 
+                    loading={loading}
+                    index={idx}
+                    compact={true}
+                  />
+                ))}
+                {indicesData.length === 0 && !loading && (
+                  <div className="col-span-full text-center py-12">
+                    <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-semibold mb-2">No Market Data</h3>
+                    <p className="text-slate-400 text-sm">Market data will appear here when available</p>
+                  </div>
+                )}
+              </div>
             </div>
-          ) : fyersStatus.connected && serverStatus !== 'stopped' ? (
+          ) : serverStatus !== 'stopped' ? (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
                 <svg className="w-8 h-8 text-slate-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -619,50 +654,53 @@ const Dashboard = () => {
               <h3 className="text-white font-semibold mb-2">Connecting to Server</h3>
               <p className="text-slate-400 text-sm">Please wait while we connect to the trading server...</p>
             </div>
-          ) : (
-            <div className="text-center py-12">
-              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                <span className="text-white font-bold text-3xl">V</span>
-              </div>
-              
-              <h1 className="text-4xl font-bold text-white mb-4">
-                Welcome to Victory Trading
-              </h1>
-              
-              <p className="text-slate-400 text-lg max-w-2xl mx-auto mb-8">
-                Connect your Fyers account to start viewing live market data and trading features.
-              </p>
-              
-              <button
-                onClick={() => setFyersModalOpen(true)}
-                className="btn-primary text-lg px-8 py-3"
-              >
-                Connect Fyers Account
-              </button>
-            </div>
-          )}
+          ) : null}
 
-          {/* Additional Trading Cards - Only show when Fyers is connected and server is running */}
-          {fyersStatus.connected && serverStatus === 'running' && (
+          {/* Additional Trading Cards - Show with Fyers connection status */}
+          {serverStatus === 'running' && (
             <>
-              {/* Trading Interface - Full Width */}
-              <TradingInterface 
-                headerStatus={headerStatus}
-                onStatusUpdate={handleStatusUpdate}
-                onTradeLog={handleTradeLog}
-                indicesData={indicesData}
-                onMonitoringUpdate={handleMonitoringUpdate}
-              />
+              {fyersStatus.connected ? (
+                <>
+                  {/* Trading Interface - Full Width */}
+                  <TradingInterface 
+                    headerStatus={headerStatus}
+                    onStatusUpdate={handleStatusUpdate}
+                    onTradeLog={handleTradeLog}
+                    indicesData={indicesData}
+                    onMonitoringUpdate={handleMonitoringUpdate}
+                  />
 
-              {/* Monitoring Dashboard - Shows Waiting for Trade & Active Positions */}
-              <div className="mt-6 sm:mt-8">
-                <MonitoringDashboard onTradeLog={handleTradeLog} refreshTrigger={monitoringRefreshTrigger} />
-              </div>
+                  {/* Monitoring Dashboard - Shows Waiting for Trade & Active Positions */}
+                  <div className="mt-6 sm:mt-8">
+                    <MonitoringDashboard onTradeLog={handleTradeLog} refreshTrigger={monitoringRefreshTrigger} />
+                  </div>
 
-              {/* Trade Log - Below Monitoring Dashboard */}
-              <div className="mb-6 sm:mb-8">
-                <TradeLog />
-              </div>
+                  {/* Trade Log - Below Monitoring Dashboard */}
+                  <div className="mb-6 sm:mb-8">
+                    <TradeLog />
+                  </div>
+                </>
+              ) : (
+                <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-6 mb-6">
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-white mb-2">Trading Interface</h3>
+                    <p className="text-slate-400 mb-4">
+                      Connect your Fyers account to access the trading interface and monitoring dashboard.
+                    </p>
+                    <button
+                      onClick={() => setFyersModalOpen(true)}
+                      className="bg-brand hover:bg-brand/90 text-white px-4 py-2 rounded-lg transition-colors"
+                    >
+                      Connect Fyers Account
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

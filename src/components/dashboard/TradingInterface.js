@@ -70,10 +70,21 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
     offlineOrder: false
   });
 
-  // Ensure default index updates when symbolConfigs loads
+  // Ensure default index updates when symbolConfigs loads (only if no index is currently selected)
   useEffect(() => {
     const firstSymbol = Object.values(symbolConfigs)[0];
-    if (firstSymbol && (!inputs.index || !inputs.index.symbolName || inputs.index.symbolName !== firstSymbol.symbolName)) {
+    
+    // Only set default if:
+    // 1. No index is currently selected, OR
+    // 2. Current index doesn't exist in the new configs, OR
+    // 3. Current index has no symbolName (fallback case)
+    if (firstSymbol && (
+      !inputs.index || 
+      !inputs.index.symbolName || 
+      !symbolConfigs[inputs.index.symbolName] ||
+      inputs.index.symbolName === '' // Fallback case
+    )) {
+      console.log('[TradingInterface] Setting default index to:', firstSymbol.symbolName);
       setInputs(prev => ({
         ...prev,
         index: firstSymbol,
@@ -196,7 +207,11 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
 
   const handleIndexChange = (indexKey) => {
     const selectedSymbol = symbolConfigs[indexKey];
-    if (!selectedSymbol) return;
+    if (!selectedSymbol) {
+      console.log('[TradingInterface] handleIndexChange - No symbol found for key:', indexKey);
+      console.log('[TradingInterface] handleIndexChange - Available keys:', Object.keys(symbolConfigs));
+      return;
+    }
     
     console.log('[TradingInterface] handleIndexChange - selectedSymbol:', selectedSymbol);
     console.log('[TradingInterface] handleIndexChange - indexKey:', indexKey);
@@ -484,8 +499,12 @@ const TradingInterface = ({ headerStatus = { monitoringStatus: 'OFF' }, onStatus
                     <select
                       id="index-select"
                       name="indexSelect"
-                      value={inputs.index.symbolName}
-                      onChange={(e) => handleIndexChange(e.target.value)}
+                      value={inputs.index.symbolName || ''}
+                      onChange={(e) => {
+                        console.log('[TradingInterface] Dropdown onChange - value:', e.target.value);
+                        console.log('[TradingInterface] Dropdown onChange - current inputs.index:', inputs.index);
+                        handleIndexChange(e.target.value);
+                      }}
                       disabled={symbolsLoading}
                       className="mt-1 block w-full bg-slate-700 border-slate-600 rounded-md shadow-sm focus:ring-brand focus:border-brand text-white text-xs disabled:opacity-50 disabled:cursor-not-allowed"
                     >

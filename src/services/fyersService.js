@@ -12,6 +12,17 @@ class FyersService {
     }
   }
 
+  // Validate Fyers token
+  static async validateToken() {
+    try {
+      const response = await api.get('/fyers/validate-token');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to validate Fyers token:', error);
+      return { valid: false, connected: false };
+    }
+  }
+
   // Get Fyers profile
   static async getProfile() {
     try {

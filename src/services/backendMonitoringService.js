@@ -253,6 +253,61 @@ class BackendMonitoringService {
       return response.data;
     } catch (error) {
       console.error('[BackendMonitoringService] Error cancelling order:', error);
+      
+      // Provide more detailed error information
+      let errorMessage = 'Failed to cancel order';
+      
+      if (error.response) {
+        // Server responded with error status
+        errorMessage = error.response.data?.message || error.response.data?.error || `Server error: ${error.response.status}`;
+        console.error('[BackendMonitoringService] Server error details:', error.response.data);
+      } else if (error.request) {
+        // Request was made but no response received
+        errorMessage = 'No response from server - check your connection';
+        console.error('[BackendMonitoringService] Network error - no response received');
+      } else {
+        // Something else happened
+        errorMessage = error.message || 'Unknown error occurred';
+        console.error('[BackendMonitoringService] Request setup error:', error.message);
+      }
+      
+      return { 
+        success: false, 
+        error: errorMessage,
+        details: {
+          orderId,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data
+        }
+      };
+    }
+  }
+
+  /**
+   * Manually recover order statuses from Fyers API
+   * @returns {Promise<Object>} Recovery result
+   */
+  static async recoverOrders() {
+    try {
+      const response = await api.post('/monitoring/recover-orders');
+      return response.data;
+    } catch (error) {
+      console.error('[BackendMonitoringService] Error recovering orders:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Debug method to recover order statuses without auth (TEMPORARY)
+   * @returns {Promise<Object>} Recovery result
+   */
+  static async recoverOrdersDebug() {
+    try {
+      const response = await api.post('/monitoring/recover-orders-debug');
+      return response.data;
+    } catch (error) {
+      console.error('[BackendMonitoringService] Error recovering orders (debug):', error);
       return { success: false, error: error.message };
     }
   }

@@ -25,8 +25,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   const [lastLiveDataUpdate, setLastLiveDataUpdate] = useState(null);
   const [symbolState, setSymbolState] = useState({});
   const [countdownTick, setCountdownTick] = useState(0); // Add this for countdown updates
-  const [slOrderModalOpen, setSlOrderModalOpen] = useState(false);
-  const [selectedSLOrder, setSelectedSLOrder] = useState(null);
+  const [viewSLOrderModal, setViewSLOrderModal] = useState({ open: false, position: null });
 
   // Modals
   const [exitModal, setExitModal] = useState({ open: false, position: null });
@@ -73,6 +72,31 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   useEffect(() => {
     loadDataFromBackend();
   }, [refreshTrigger]); // Add refreshTrigger as dependency
+
+  // Automatic order recovery on component mount if there are pending orders
+  useEffect(() => {
+    const autoRecoverOrders = async () => {
+      try {
+        // Check if there are any pending orders that might need recovery
+        const hasPendingOrders = monitoredSymbols.some(s => s.orderId && s.orderStatus === 'PENDING') ||
+                                activePositions.some(p => p.buyOrderId && p.orderStatus === 'PENDING');
+        
+        if (hasPendingOrders) {
+          console.log('🔄 Auto-recovering orders on component mount...');
+          await BackendMonitoringService.recoverOrders();
+          // Refresh data after recovery
+          await loadDataFromBackend();
+        }
+      } catch (error) {
+        console.error('❌ Error in auto order recovery:', error);
+      }
+    };
+
+    // Only run auto-recovery if we have data loaded
+    if (monitoredSymbols.length > 0 || activePositions.length > 0) {
+      autoRecoverOrders();
+    }
+  }, [monitoredSymbols.length, activePositions.length]); // Run when data changes
 
   // Periodic refresh of monitored symbols and active positions from backend
   useEffect(() => {
@@ -249,6 +273,9 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   }, [monitoredSymbols.map(s => s.symbol).join(',')]); // Only re-run when symbol names change
 
   // Trade logic execution using backend-polled data
+  // DISABLED: Backend now handles all monitoring logic
+  // This frontend logic was causing duplicate LTP vs HMA comparisons
+  /*
   useEffect(() => {
     const executeTradeLogic = async () => {
       if (isUpdatingLiveData || monitoredSymbols.length === 0) return;
@@ -274,7 +301,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
           let newSymbolState = { ...symbolState[symbol.id], prevLtp: ltp };
 
           // --- Trade Logic ---
-          if (symbol.triggerStatus === 'WAITING') {
+          if (symbol.triggerStatus === 'WAITING' || symbol.triggerStatus === 'WAITING_FOR_REVERSAL' || symbol.triggerStatus === 'WAITING_FOR_ENTRY') {
             const isPending = newSymbolState.pendingSignal;
 
             if (isPending) {
@@ -328,11 +355,11 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                   };
                   
                   executeTrade().then(res => {
-                    // Attach SL-M order info to the position
-                    const slOrder = res?.slOrder || null;
+                    // Attach SL order info to the position
+                    const slOrderDetails = res?.slOrderDetails || null;
                     setActivePositions(prev => [
                       ...prev,
-                      { ...newPosition, slOrder }
+                      { ...newPosition, slOrderDetails }
                     ]);
                     onTradeLog({
                       message: `[${symbol.tradingMode}] BUY order for ${symbol.symbol} executed at ${formatPrice(ltp)}.`,
@@ -382,6 +409,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     const interval = setInterval(executeTradeLogic, 2000);
     return () => clearInterval(interval);
   }, [monitoredSymbols, activePositions, isUpdatingLiveData, symbolState, onTradeLog]);
+  */
 
   // Active position management - handle exits, trail SL, etc.
   useEffect(() => {
@@ -658,7 +686,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
 
   // Add countdown timer for CONFIRMING status
   useEffect(() => {
-    const hasConfirmingSymbols = monitoredSymbols.some(s => s.triggerStatus === 'CONFIRMING');
+            const hasConfirmingSymbols = monitoredSymbols.some(s => s.triggerStatus === 'CONFIRMING' || s.triggerStatus === 'CONFIRMING_REVERSAL' || s.triggerStatus === 'CONFIRMING_ENTRY');
     
     if (hasConfirmingSymbols) {
       const interval = setInterval(() => {
@@ -753,11 +781,26 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
         
         window.showToast(`Order cancelled successfully for ${order.symbol}`, 'success');
       } else {
-        window.showToast(`Failed to cancel order for ${order.symbol}`, 'error');
+        // Show detailed error message from backend
+        const errorMessage = response.error || response.message || 'Failed to cancel order';
+        window.showToast(`Failed to cancel order for ${order.symbol}: ${errorMessage}`, 'error');
+        console.error('❌ Cancel order failed:', response);
       }
     } catch (error) {
       console.error('❌ Error cancelling pending order:', error);
-      window.showToast(`Error cancelling order: ${error.message}`, 'error');
+      
+      // Show detailed error information
+      let errorMessage = 'Unknown error occurred';
+      
+      if (error.response) {
+        errorMessage = error.response.data?.message || error.response.data?.error || `Server error: ${error.response.status}`;
+      } else if (error.request) {
+        errorMessage = 'No response from server - check your connection';
+      } else {
+        errorMessage = error.message || 'Unknown error occurred';
+      }
+      
+      window.showToast(`Error cancelling order: ${errorMessage}`, 'error');
     }
   };
 
@@ -770,8 +813,37 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     }
   };
 
+  // Function to show rejection notifications
+  const showRejectionNotification = (symbol, reason) => {
+    let message = '';
+    let type = 'error';
+    
+    if (reason.includes('blocked one day ahead of expiry')) {
+      message = `${symbol}: Contract blocked - near expiry date. Symbol removed from monitoring.`;
+      type = 'warning';
+    } else if (reason.includes('Freeze qty including square off order')) {
+      message = `${symbol}: Position limit exceeded. Try reducing lot size or check account limits.`;
+      type = 'warning';
+    } else if (reason.includes('Insufficient funds')) {
+      message = `${symbol}: Insufficient funds to place order.`;
+      type = 'error';
+    } else if (reason.includes('Market closed')) {
+      message = `${symbol}: Market is closed. Orders can only be placed during market hours.`;
+      type = 'warning';
+    } else {
+      message = `${symbol}: Order rejected - ${reason}`;
+      type = 'error';
+    }
+    
+    window.showToast(message, type);
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
+      case 'WAITING_FOR_REVERSAL': return 'text-amber-400 bg-amber-900/20 border border-amber-700/30';
+      case 'CONFIRMING_REVERSAL': return 'text-yellow-400 bg-yellow-900/20 border border-yellow-700/30';
+      case 'WAITING_FOR_ENTRY': return 'text-brand bg-brand/20 border border-brand/30';
+      case 'CONFIRMING_ENTRY': return 'text-orange-400 bg-orange-900/20 border border-orange-700/30';
       case 'WAITING': return 'text-yellow-400 bg-yellow-900/20 border border-yellow-700/30';
       case 'CONFIRMING': return 'text-orange-400 bg-orange-900/20 border border-orange-700/30';
       case 'ORDER_PLACED': return 'text-blue-400 bg-blue-900/20 border border-blue-700/30';
@@ -783,6 +855,10 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
       case 'TARGET_EXIT_FAILED': return 'text-red-400 bg-red-900/20 border border-red-700/30';
       case 'SL_HIT': return 'text-red-400 bg-red-900/20 border border-red-700/30';
       case 'WAITING_REENTRY': return 'text-cyan-400 bg-cyan-900/20 border border-cyan-700/30';
+      case 'PENDING': return 'text-yellow-400 bg-yellow-900/20 border border-yellow-700/30';
+      case 'FILLED': return 'text-green-400 bg-green-900/20 border border-green-700/30';
+      case 'REJECTED': return 'text-red-400 bg-red-900/20 border border-red-700/30';
+      case 'CANCELLED': return 'text-purple-400 bg-purple-900/20 border border-purple-700/30';
       default: return 'text-slate-400 bg-slate-900/20 border border-slate-700/30';
     }
   };
@@ -790,6 +866,14 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   const getStatusDescription = (symbol) => {
     // Map backend status to frontend display status
     switch (symbol.triggerStatus) {
+      case 'WAITING_FOR_REVERSAL':
+        return 'Waiting for Reversal';
+      case 'CONFIRMING_REVERSAL':
+        return 'Confirming Reversal';
+      case 'WAITING_FOR_ENTRY':
+        return 'Ready for Entry';
+      case 'CONFIRMING_ENTRY':
+        return 'Confirming Entry';
       case 'WAITING':
         return 'Waiting';
       case 'CONFIRMING':
@@ -817,34 +901,92 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     }
   };
 
+  const getRejectionReason = (symbol) => {
+    // Check for specific rejection reasons in order remarks or status
+    if (symbol.orderStatus === 'REJECTED' || symbol.triggerStatus === 'ORDER_REJECTED') {
+      const remarks = symbol.orderRemarks || symbol.remarks || '';
+      
+      if (remarks.includes('blocked one day ahead of expiry')) {
+        return 'Contract blocked - near expiry';
+      } else if (remarks.includes('Freeze qty including square off order')) {
+        return 'Position limit exceeded';
+      } else if (remarks.includes('Insufficient funds')) {
+        return 'Insufficient funds';
+      } else if (remarks.includes('Market closed')) {
+        return 'Market closed';
+      } else if (remarks.includes('Invalid symbol')) {
+        return 'Invalid symbol';
+      } else if (remarks.includes('tick size')) {
+        return 'Price not in tick size';
+      } else {
+        return 'Order rejected';
+      }
+    }
+    
+    return null;
+  };
+
   // Add function to calculate countdown for CONFIRMING status
   const getConfirmingCountdown = (symbol) => {
-    if (symbol.triggerStatus !== 'CONFIRMING' || !symbol.pendingSignal?.triggeredAt) {
-      return null;
-    }
-
-    const now = new Date();
-    const triggeredAt = new Date(symbol.pendingSignal.triggeredAt);
-    
-    // Calculate time until next 5-minute candle close (MM:59)
-    const currentMinute = now.getMinutes();
-    const currentSecond = now.getSeconds();
-    
-    // Find the next 5-minute boundary (MM:59)
-    const nextFiveMinBoundary = Math.ceil(currentMinute / 5) * 5 - 1; // 4, 9, 14, 19, etc.
-    const minutesUntilBoundary = nextFiveMinBoundary - currentMinute;
-    const secondsUntilBoundary = 59 - currentSecond;
-    
-    const totalSecondsLeft = minutesUntilBoundary * 60 + secondsUntilBoundary;
-    
-    if (totalSecondsLeft <= 0) {
-      return "Placing order...";
+    // Handle CONFIRMING_REVERSAL status (15-minute timer)
+    if (symbol.triggerStatus === 'CONFIRMING_REVERSAL' && symbol.pendingSignal?.confirmationEndTime) {
+      const now = new Date();
+      const endTime = new Date(symbol.pendingSignal.confirmationEndTime);
+      const timeLeft = endTime - now;
+      
+      if (timeLeft <= 0) {
+        return "Confirming...";
+      }
+      
+      const minutesLeft = Math.floor(timeLeft / (60 * 1000));
+      const secondsLeft = Math.floor((timeLeft % (60 * 1000)) / 1000);
+      
+      return `${minutesLeft}m ${secondsLeft}s left`;
     }
     
-    const minutesLeft = Math.floor(totalSecondsLeft / 60);
-    const secondsLeft = totalSecondsLeft % 60;
+    // Handle CONFIRMING_ENTRY status (5-minute candle timer)
+    if (symbol.triggerStatus === 'CONFIRMING_ENTRY' && symbol.pendingSignal?.confirmationEndTime) {
+      const now = new Date();
+      const endTime = new Date(symbol.pendingSignal.confirmationEndTime);
+      const timeLeft = endTime - now;
+      
+      if (timeLeft <= 0) {
+        return "Placing order...";
+      }
+      
+      const minutesLeft = Math.floor(timeLeft / (60 * 1000));
+      const secondsLeft = Math.floor((timeLeft % (60 * 1000)) / 1000);
+      
+      return `${minutesLeft}m ${secondsLeft}s left`;
+    }
     
-    return `${minutesLeft}m ${secondsLeft}s left`;
+    // Handle old CONFIRMING status (5-minute candle timer)
+    if (symbol.triggerStatus === 'CONFIRMING' && symbol.pendingSignal?.triggeredAt) {
+      const now = new Date();
+      const triggeredAt = new Date(symbol.pendingSignal.triggeredAt);
+      
+      // Calculate time until next 5-minute candle close (MM:59)
+      const currentMinute = now.getMinutes();
+      const currentSecond = now.getSeconds();
+      
+      // Find the next 5-minute boundary (MM:59)
+      const nextFiveMinBoundary = Math.ceil(currentMinute / 5) * 5 - 1; // 4, 9, 14, 19, etc.
+      const minutesUntilBoundary = nextFiveMinBoundary - currentMinute;
+      const secondsUntilBoundary = 59 - currentSecond;
+      
+      const totalSecondsLeft = minutesUntilBoundary * 60 + secondsUntilBoundary;
+      
+      if (totalSecondsLeft <= 0) {
+        return "Placing order...";
+      }
+      
+      const minutesLeft = Math.floor(totalSecondsLeft / 60);
+      const secondsLeft = totalSecondsLeft % 60;
+      
+      return `${minutesLeft}m ${secondsLeft}s left`;
+    }
+    
+    return null;
   };
 
   const calculateTargetSL = (currentLTP, targetPoints, stopLossPoints) => {
@@ -894,6 +1036,28 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     }
   };
 
+  const handleMoveStrikeToEntry = async (symbolId) => {
+    try {
+      console.log(`🚀 Manually moving strike ${symbolId} to Waiting for Entry`);
+      
+      const response = await api.post('/monitoring/move-strike-to-entry', {
+        symbolId: symbolId
+      });
+
+      const result = response.data;
+      
+      if (result.success) {
+        console.log('✅ Strike moved to Waiting for Entry successfully:', result.message);
+        // Refresh the data to show updated status
+        await loadDataFromBackend();
+      } else {
+        console.error('❌ Failed to move strike to entry:', result.message);
+      }
+    } catch (error) {
+      console.error('❌ Error moving strike to entry:', error);
+    }
+  };
+
   const handlePlaceLimitOrder = async (symbol) => {
     try {
       console.log(`📋 Placing limit order for ${symbol.symbol}`);
@@ -918,8 +1082,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   };
 
   const handleViewSLOrder = (position) => {
-    setSelectedSLOrder(position.slOrderDetails);
-    setSlOrderModalOpen(true);
+    setViewSLOrderModal({ open: true, position });
   };
 
   // Manual HMA refresh handler
@@ -977,10 +1140,49 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     }
   };
 
+  const handleRecoverOrders = async () => {
+    try {
+      console.log('🔄 Manual order recovery triggered');
+      
+      // Try the debug endpoint first (no auth required)
+      let result = await BackendMonitoringService.recoverOrdersDebug();
+      
+      if (!result.success) {
+        console.log('🔄 Debug endpoint failed, trying authenticated endpoint...');
+        result = await BackendMonitoringService.recoverOrders();
+      }
+      
+      if (result.success) {
+        console.log('✅ Order recovery completed successfully');
+        // Refresh the data to show updated status
+        await loadDataFromBackend();
+      } else {
+        console.error('❌ Order recovery failed:', result.message || result.error);
+      }
+    } catch (error) {
+      console.error('❌ Error during order recovery:', error);
+    }
+  };
+
   if (monitoredSymbols.length === 0 && activePositions.length === 0) {
     return (
       <div className="mb-6 sm:mb-8">
         <div className="space-y-4 sm:space-y-6">
+          {/* Empty Waiting for Reversal Card */}
+          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 sm:p-8">
+            <div className="flex items-center gap-2 mb-4 p-4 border-b border-slate-700/50">
+              <Clock className="w-5 h-5 text-amber-400" />
+              <h4 className="text-lg font-semibold text-white">Waiting for Reversal</h4>
+            </div>
+            <div className="text-center py-8">
+              <div className="w-16 h-16 mx-auto mb-4 bg-slate-700 rounded-full flex items-center justify-center">
+                <Clock className="w-8 h-8 text-slate-500" />
+              </div>
+              <p className="text-slate-400 text-sm">No symbols are currently being monitored</p>
+              <p className="text-slate-500 text-xs mt-1">Select options and click "Start Monitoring" to begin</p>
+            </div>
+          </div>
+
           {/* Empty Waiting for Entry Card */}
           <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-4 sm:p-8">
             <div className="flex items-center gap-2 mb-4 p-4 border-b border-slate-700/50">
@@ -1018,73 +1220,102 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   return (
     <div className="mb-4 sm:mb-6">
       <div className="space-y-3 sm:space-y-4">
-        {/* Waiting for Entry Card - Always show */}
-        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4">
-          <div className="flex items-center justify-between mb-3 p-3 border-b border-slate-700/50">
-            <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4 text-brand" />
-              <h4 className="text-base font-semibold text-white">Waiting for Entry</h4>
-            </div>
-            <div className="flex items-center gap-3">
-              {monitoredSymbols.length > 0 && (
-                <>
-                  <span className="text-xs text-slate-500">
-                    Last HMA: {formatTime(lastHMARefresh)}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    Next HMA Refresh: {formatTime(nextHMARefresh)}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    Live Data: {formatTime(lastLiveDataUpdate)}
-                  </span>
-                  <button
-                    onClick={handleManualHMARefresh}
-                    disabled={isRefreshingHMA}
-                    className={`px-2 py-1 rounded-lg transition-colors text-xs ${
-                      isRefreshingHMA 
-                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
-                        : 'bg-blue-800 text-white hover:bg-blue-700'
-                    }`}
-                    title="Manually refresh HMA values"
-                  >
-                    {isRefreshingHMA ? 'Refreshing...' : 'Refresh HMA'}
-                  </button>
-                </>
-              )}
+        {/* System Status Bar */}
+        {monitoredSymbols.length > 0 && (
+          <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-300">System Status</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500">
+                  Last HMA: {formatTime(lastHMARefresh)}
+                </span>
+                <span className="text-xs text-slate-500">
+                  Next HMA Refresh: {formatTime(nextHMARefresh)}
+                </span>
+                <span className="text-xs text-slate-500">
+                  Live Data: {formatTime(lastLiveDataUpdate)}
+                </span>
+                <button
+                  onClick={handleRecoverOrders}
+                  className="px-2 py-1 rounded-lg transition-colors text-xs bg-orange-800 text-white hover:bg-orange-700"
+                  title="Recover order statuses from Fyers API (useful after connection issues)"
+                >
+                  Recover Orders
+                </button>
+                <button
+                  onClick={handleManualHMARefresh}
+                  disabled={isRefreshingHMA}
+                  className={`px-2 py-1 rounded-lg transition-colors text-xs ${
+                    isRefreshingHMA 
+                      ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                      : 'bg-blue-800 text-white hover:bg-blue-700'
+                  }`}
+                  title="Manually refresh HMA values"
+                >
+                  {isRefreshingHMA ? 'Refreshing...' : 'Refresh HMA'}
+                </button>
+              </div>
             </div>
           </div>
-          {monitoredSymbols.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-600">
-                    <th className="text-left py-1.5 px-2 text-xs font-medium text-slate-300">Symbol Name</th>
-                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">LTP</th>
-                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">HMA-55</th>
-                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">Target</th>
-                    <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">Stop Loss (SL)</th>
-                    <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Status</th>
-                    <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monitoredSymbols.map((item) => {
-                    const { target, stopLoss } = calculateTargetSL(item.currentLTP, item.targetPoints, item.stopLossPoints);
-                    return (
+        )}
+
+        {/* Waiting for Reversal Card */}
+        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-3 p-3 border-b border-slate-700/50">
+            <Clock className="w-4 h-4 text-amber-400" />
+            <h4 className="text-base font-semibold text-white">Waiting for Reversal</h4>
+            <span className="text-xs text-amber-400 bg-amber-900/30 px-2 py-1 rounded-full">
+              LTP &gt; HMA
+            </span>
+            <span className="text-xs text-slate-400 ml-auto">
+              {(() => {
+                const reversalSymbols = monitoredSymbols.filter(s => 
+                  s.triggerStatus === 'WAITING_FOR_REVERSAL' || 
+                  s.triggerStatus === 'CONFIRMING_REVERSAL'
+                );
+                const confirmingCount = reversalSymbols.filter(s => s.triggerStatus === 'CONFIRMING_REVERSAL').length;
+                return confirmingCount > 0 ? `${confirmingCount} confirming` : '';
+              })()}
+            </span>
+          </div>
+          {(() => {
+            const reversalSymbols = monitoredSymbols.filter(s => 
+              s.triggerStatus === 'WAITING_FOR_REVERSAL' || 
+              s.triggerStatus === 'CONFIRMING_REVERSAL'
+            );
+            return reversalSymbols.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-600">
+                      <th className="text-left py-1.5 px-2 text-xs font-medium text-slate-300">Symbol Name</th>
+                      <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">LTP</th>
+                      <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">HMA-55</th>
+                      <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Status</th>
+                      <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reversalSymbols.map((item) => (
                       <tr key={item.id} className="border-b border-slate-700 hover:bg-slate-700/50">
                         <td className="py-2 px-2">
                           <div className="flex items-center gap-2">
                             <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${item.type === 'CE' ? 'bg-blue-900/30 text-blue-400' : 'bg-purple-900/30 text-purple-400'}`}>{item.type}</span>
                             <span className="text-xs font-medium text-white">{item.symbol}</span>
-                            {/* Trade type chip */}
-                            <span className={`ml-2 px-1.5 py-0.5 text-xs rounded-full font-semibold ${item.tradingMode === 'LIVE' ? 'bg-blue-700/80 text-white border border-blue-400' : 'bg-slate-700/80 text-slate-300 border border-slate-500'}`}
-                              title={item.tradingMode === 'LIVE' ? 'Live Trade' : 'Paper Trade'}>
+                            <span className={`ml-2 px-1.5 py-0.5 text-xs rounded-full font-semibold ${item.tradingMode === 'LIVE' ? 'bg-blue-700/80 text-white border border-blue-400' : 'bg-slate-700/80 text-slate-300 border border-slate-500'}`}>
                               {item.tradingMode === 'LIVE' ? 'LIVE' : 'PAPER'}
                             </span>
                           </div>
                         </td>
                         <td className="py-2 px-2 text-right">
-                          <span className="text-xs font-semibold text-white">
+                          <span className={`text-xs font-semibold ${
+                            item.triggerStatus === 'CONFIRMING_REVERSAL' 
+                              ? 'text-yellow-400' 
+                              : 'text-white'
+                          }`}>
                             {formatPrice(item.currentLTP)}
                           </span>
                         </td>
@@ -1093,27 +1324,34 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                             {formatPrice(item.hmaValue)}
                           </span>
                         </td>
-                        <td className="py-2 px-2 text-right">
-                          <span className="text-xs font-semibold text-green-400">
-                            {formatPrice(target)}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-right">
-                          <span className="text-xs font-semibold text-red-400">
-                            {formatPrice(stopLoss)}
-                          </span>
-                        </td>
                         <td className="py-2 px-2 text-center">
                           <span className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(item.triggerStatus)}`}
-                                title={item.orderModificationReason ? `Reason: ${item.orderModificationReason}` : ''}>
+                                title={
+                                  item.triggerStatus === 'CONFIRMING_REVERSAL' 
+                                    ? `LTP crossed below HMA - 15-minute confirmation timer running. ${getConfirmingCountdown(item) || 'Confirming...'} remaining. If LTP stays below HMA for 15 minutes, symbol will move to "Waiting for Entry". If LTP goes back above HMA, timer will cancel.`
+                                    : item.orderModificationReason 
+                                      ? `Reason: ${item.orderModificationReason}` 
+                                      : ''
+                                }>
                             {getStatusDescription(item)}
-                            {item.triggerStatus === 'CONFIRMING' && getConfirmingCountdown(item) !== null && (
-                              <span className="ml-1 text-xs text-slate-400">({getConfirmingCountdown(item)})</span>
+                            {getConfirmingCountdown(item) && (
+                              <span className="ml-1 text-xs text-slate-400">
+                                ({getConfirmingCountdown(item)})
+                              </span>
                             )}
                           </span>
                         </td>
                         <td className="py-2 px-2 text-center">
-                          <div className="flex gap-1">
+                          <div className="flex flex-col gap-1">
+                            {item.triggerStatus === 'CONFIRMING_REVERSAL' && (
+                              <button
+                                onClick={() => handleMoveStrikeToEntry(item.id)}
+                                className="px-1.5 py-0.5 bg-green-900/30 hover:bg-green-800/40 text-green-400 text-xs font-medium rounded-md"
+                                title={`Manually move ${item.symbol} to Waiting for Entry (bypass 15-minute timer)`}
+                              >
+                                Move Strike
+                              </button>
+                            )}
                             <button
                               onClick={() => handleStopMonitoringSymbol(item.id)}
                               className="px-1.5 py-0.5 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
@@ -1121,32 +1359,144 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                             >
                               Stop Monitoring
                             </button>
-                            {(item.triggerStatus === 'WAITING' || item.triggerStatus === 'WAITING_REENTRY') && (
-                              <button
-                                onClick={() => handlePlaceLimitOrder(item)}
-                                className="px-1.5 py-0.5 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
-                                title={`Place limit order for ${item.symbol}`}
-                              >
-                                Place Limit Order
-                              </button>
-                            )}
                           </div>
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 mx-auto mb-4 bg-slate-700 rounded-full flex items-center justify-center">
-                <Eye className="w-8 h-8 text-slate-500" />
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <p className="text-slate-400 text-sm">No symbols are currently being monitored</p>
-              <p className="text-slate-500 text-xs mt-1">Select options and click "Start Monitoring" to begin</p>
-            </div>
-          )}
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-4 bg-slate-700 rounded-full flex items-center justify-center">
+                  <Clock className="w-8 h-8 text-slate-500" />
+                </div>
+                <p className="text-slate-400 text-sm">No symbols waiting for reversal</p>
+                <p className="text-slate-500 text-xs mt-1">Symbols with LTP &gt; HMA will appear here</p>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Waiting for Entry Card */}
+        <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-3 sm:p-4">
+          <div className="flex items-center gap-2 mb-3 p-3 border-b border-slate-700/50">
+            <Eye className="w-4 h-4 text-brand" />
+            <h4 className="text-base font-semibold text-white">Waiting for Entry</h4>
+            <span className="text-xs text-brand bg-brand/20 px-2 py-1 rounded-full">
+              LTP &lt; HMA (Confirmed)
+            </span>
+          </div>
+          {(() => {
+            const entrySymbols = monitoredSymbols.filter(s => s.triggerStatus === 'WAITING_FOR_ENTRY' || s.triggerStatus === 'CONFIRMING_ENTRY');
+            return entrySymbols.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-600">
+                      <th className="text-left py-1.5 px-2 text-xs font-medium text-slate-300">Symbol Name</th>
+                      <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">LTP</th>
+                      <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">HMA-55</th>
+                      <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">Target</th>
+                      <th className="text-right py-1.5 px-2 text-xs font-medium text-slate-300">Stop Loss (SL)</th>
+                      <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Status</th>
+                      <th className="text-center py-1.5 px-2 text-xs font-medium text-slate-300">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entrySymbols.map((item) => {
+                      const { target, stopLoss } = calculateTargetSL(item.currentLTP, item.targetPoints, item.stopLossPoints);
+                      return (
+                        <tr key={item.id} className="border-b border-slate-700 hover:bg-slate-700/50">
+                          <td className="py-2 px-2">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded ${item.type === 'CE' ? 'bg-blue-900/30 text-blue-400' : 'bg-purple-900/30 text-purple-400'}`}>{item.type}</span>
+                              <span className="text-xs font-medium text-white">{item.symbol}</span>
+                              <span className={`ml-2 px-1.5 py-0.5 text-xs rounded-full font-semibold ${item.tradingMode === 'LIVE' ? 'bg-blue-700/80 text-white border border-blue-400' : 'bg-slate-700/80 text-slate-300 border border-slate-500'}`}>
+                                {item.tradingMode === 'LIVE' ? 'LIVE' : 'PAPER'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            <span className="text-xs font-semibold text-white">
+                              {formatPrice(item.currentLTP)}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            <span className="text-xs font-semibold text-slate-300">
+                              {formatPrice(item.hmaValue)}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            <span className="text-xs font-semibold text-green-400">
+                              {formatPrice(target)}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right">
+                            <span className="text-xs font-semibold text-red-400">
+                              {formatPrice(stopLoss)}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <div className="flex flex-col gap-1">
+                              <span className={`px-1.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(item.triggerStatus)}`}
+                                    title={
+                                      item.triggerStatus === 'CONFIRMING_ENTRY' 
+                                        ? `LTP crossed above HMA - 5-minute candle confirmation timer running. ${getConfirmingCountdown(item) || 'Confirming...'} remaining. If LTP stays above HMA until candle close, market order will be placed. If LTP goes back below HMA, timer will cancel.`
+                                        : item.orderModificationReason 
+                                          ? `Reason: ${item.orderModificationReason}` 
+                                          : ''
+                                    }>
+                                {getStatusDescription(item)}
+                                {getConfirmingCountdown(item) && (
+                                  <span className="ml-1 text-xs text-slate-400">
+                                    ({getConfirmingCountdown(item)})
+                                  </span>
+                                )}
+                              </span>
+                              {getRejectionReason(item) && (
+                                <span className="text-xs text-red-400 bg-red-900/20 px-1 py-0.5 rounded">
+                                  {getRejectionReason(item)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => handleStopMonitoringSymbol(item.id)}
+                                className="px-1.5 py-0.5 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
+                                title={`Stop monitoring ${item.symbol}`}
+                              >
+                                Stop Monitoring
+                              </button>
+                              {item.triggerStatus === 'WAITING_FOR_ENTRY' && (
+                                <button
+                                  onClick={() => handlePlaceLimitOrder(item)}
+                                  className="px-1.5 py-0.5 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
+                                  title={`Place limit order for ${item.symbol}`}
+                                >
+                                  Place Limit Order
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-4 bg-slate-700 rounded-full flex items-center justify-center">
+                  <Eye className="w-8 h-8 text-slate-500" />
+                </div>
+                <p className="text-slate-400 text-sm">No symbols ready for entry</p>
+                <p className="text-slate-500 text-xs mt-1">Symbols with confirmed reversal will appear here</p>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Pending Orders Card */}
@@ -1267,6 +1617,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                     <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">Stop Loss</th>
                     <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">Invested</th>
                     <th className="text-right py-2 px-3 text-sm font-medium text-slate-300">P&L</th>
+                    <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Order ID</th>
                     <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Status</th>
                     <th className="text-center py-2 px-3 text-sm font-medium text-slate-300">Actions</th>
                   </tr>
@@ -1324,29 +1675,56 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
+                        <span className="text-xs font-mono text-slate-300">{position.buyOrderId || '--'}</span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
                         <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(position.orderStatus || 'Active')}`}>
-                          {position.orderStatus === 'TARGET_EXIT_PENDING' ? 'Target Exit Pending' :
+                          {position.orderStatus === 'PENDING' ? 'Waiting - Order Placed' :
+                           position.orderStatus === 'FILLED' ? 'Successful - Order Placed' :
+                           position.orderStatus === 'TARGET_EXIT_PENDING' ? 'Target Exit Pending' :
                            position.orderStatus === 'TARGET_EXIT_EXECUTED' ? 'Target Exit Executed' :
                            position.orderStatus === 'TARGET_EXIT_FAILED' ? 'Target Exit Failed' :
+                           position.orderStatus === 'REJECTED' ? 'Order Rejected' :
+                           position.orderStatus === 'CANCELLED' ? 'Order Cancelled' :
                            position.orderStatus || 'Active'}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          <button
-                            onClick={() => setSlmModal({ open: true, position })}
-                            className="px-2 py-1 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
-                            title={`View modifications for ${position.symbol}`}
-                          >
-                            Modifications
-                          </button>
-                          <button
-                            onClick={() => handleExitPosition(position)}
-                            className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
-                            title={`Exit position for ${position.symbol}`}
-                          >
-                            Exit
-                          </button>
+                          {/* Show Cancel button for pending orders */}
+                          {position.orderStatus === 'PENDING' && (
+                            <button
+                              onClick={() => handleCancelPendingOrder(position)}
+                              className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
+                              title={`Cancel pending order for ${position.symbol}`}
+                            >
+                              Cancel Order
+                            </button>
+                          )}
+                          
+                          {/* Show Exit button for filled orders */}
+                          {position.orderStatus === 'FILLED' && (
+                            <button
+                              onClick={() => handleExitPosition(position)}
+                              className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
+                              title={`Exit position for ${position.symbol}`}
+                            >
+                              Exit Trade
+                            </button>
+                          )}
+                          
+                          {/* Show Modifications button for active positions */}
+                          {position.orderStatus === 'FILLED' && (
+                            <button
+                              onClick={() => setSlmModal({ open: true, position })}
+                              className="px-2 py-1 bg-blue-900/30 hover:bg-blue-800/40 text-blue-400 text-xs font-medium rounded-md"
+                              title={`View modifications for ${position.symbol}`}
+                            >
+                              Modifications
+                            </button>
+                          )}
+                          
+                          {/* Show View SL Order button when SL order is placed */}
                           {position.slOrderDetails && (
                             <button
                               onClick={() => handleViewSLOrder(position)}
@@ -1433,14 +1811,14 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
         </div>
       )}
 
-      {/* SL Order Modal */}
-      {slOrderModalOpen && selectedSLOrder && (
+      {/* View SL Order Modal */}
+      {viewSLOrderModal.open && viewSLOrderModal.position && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">SL Order Details</h3>
+              <h3 className="text-lg font-semibold text-white">Stop Loss Order Details</h3>
               <button
-                onClick={() => setSlOrderModalOpen(false)}
+                onClick={() => setViewSLOrderModal({ open: false, position: null })}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="w-5 h-5" />
@@ -1449,56 +1827,59 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
             
             <div className="space-y-3">
               <div className="flex justify-between">
-                <span className="text-slate-400">Order ID:</span>
-                <span className="text-white font-mono text-sm">{selectedSLOrder.orderId}</span>
+                <span className="text-slate-400">Symbol:</span>
+                <span className="text-white font-semibold">{viewSLOrderModal.position.symbol}</span>
               </div>
               
               <div className="flex justify-between">
-                <span className="text-slate-400">Stop Loss Price:</span>
-                <span className="text-red-400 font-semibold">₹{selectedSLOrder.stopLossPrice?.toFixed(2)}</span>
+                <span className="text-slate-400">SL Order ID:</span>
+                <span className="text-white font-mono text-sm">{viewSLOrderModal.position.slOrderDetails?.orderId || '--'}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-slate-400">Stop Loss Price (Limit):</span>
+                <span className="text-red-400 font-semibold">₹{viewSLOrderModal.position.slOrderDetails?.stopPrice?.toFixed(2) || '--'}</span>
               </div>
               
               <div className="flex justify-between">
                 <span className="text-slate-400">Trigger Price:</span>
-                <span className="text-yellow-400 font-semibold">₹{selectedSLOrder.triggerPrice?.toFixed(2)}</span>
+                <span className="text-yellow-400 font-semibold">₹{viewSLOrderModal.position.slOrderDetails?.triggerPrice?.toFixed(2) || '--'}</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-slate-400">Order Type:</span>
+                <span className="text-blue-400 font-semibold">SELL SL-L</span>
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-slate-400">Quantity:</span>
+                <span className="text-white">{viewSLOrderModal.position.quantity || '--'}</span>
               </div>
               
               <div className="flex justify-between">
                 <span className="text-slate-400">Placed At:</span>
-                <span className="text-white text-sm">{new Date(selectedSLOrder.placedAt).toLocaleTimeString()}</span>
+                <span className="text-white text-sm">
+                  {viewSLOrderModal.position.slOrderDetails?.placedAt 
+                    ? new Date(viewSLOrderModal.position.slOrderDetails.placedAt).toLocaleTimeString() 
+                    : '--'}
+                </span>
               </div>
               
-              {selectedSLOrder.modifications && selectedSLOrder.modifications.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-slate-300 font-semibold mb-2">Modifications:</h4>
-                  <div className="space-y-2 max-h-32 overflow-y-auto">
-                    {selectedSLOrder.modifications.map((mod, index) => (
-                      <div key={index} className="bg-slate-700 rounded p-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Time:</span>
-                          <span className="text-white">{new Date(mod.timestamp).toLocaleTimeString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Old Price:</span>
-                          <span className="text-red-400">₹{mod.oldPrice?.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">New Price:</span>
-                          <span className="text-green-400">₹{mod.newPrice?.toFixed(2)}</span>
-                        </div>
-                        <div className="text-slate-400 text-xs mt-1">
-                          Reason: {mod.reason}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+              <div className="mt-4 p-3 bg-slate-700 rounded">
+                <div className="text-xs text-slate-300 mb-2">
+                  <strong>Note:</strong> This is a Stop Limit (SL-L) order where:
                 </div>
-              )}
+                <ul className="text-xs text-slate-300 space-y-1">
+                  <li>• <strong>Limit Price:</strong> Stop loss price (₹{viewSLOrderModal.position.slOrderDetails?.stopPrice?.toFixed(2) || '--'})</li>
+                  <li>• <strong>Trigger Price:</strong> 0.5 points higher (₹{viewSLOrderModal.position.slOrderDetails?.triggerPrice?.toFixed(2) || '--'})</li>
+                  <li>• Order executes when price hits trigger, but only at limit price or better</li>
+                </ul>
+              </div>
             </div>
             
             <div className="mt-6 flex justify-end">
               <button
-                onClick={() => setSlOrderModalOpen(false)}
+                onClick={() => setViewSLOrderModal({ open: false, position: null })}
                 className="px-4 py-2 bg-slate-600 text-white rounded hover:bg-slate-500"
               >
                 Close
