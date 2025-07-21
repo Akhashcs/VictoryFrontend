@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Eye, EyeOff, TrendingUp, Clock, Plus, Target, Shield, X, Info } from 'lucide-react';
+import { Eye, EyeOff, TrendingUp, Clock, Plus, Target, Shield, X, Info, History } from 'lucide-react';
 
 import TradeService from '../../services/tradeService';
 import { HMAService } from '../../services/hmaService';
 import api, { onMarketData } from '../../services/api';
 import BackendMonitoringService from '../../services/backendMonitoringService';
+import OrderModificationsModal from './OrderModificationsModal';
 
 const formatPrice = (v) => `₹${v?.toFixed(2) ?? '--'}`;
 const formatTime = (date) => {
@@ -31,6 +32,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
   const [exitModal, setExitModal] = useState({ open: false, position: null });
   const [detailsModal, setDetailsModal] = useState({ open: false, position: null });
   const [slmModal, setSlmModal] = useState({ open: false, position: null });
+  const [orderModificationsModal, setOrderModificationsModal] = useState({ open: false, symbolId: null, symbolName: null });
 
   // Load data from backend function
   const loadDataFromBackend = async () => {
@@ -1085,6 +1087,14 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
     setViewSLOrderModal({ open: true, position });
   };
 
+  const handleViewOrderModifications = (symbol) => {
+    setOrderModificationsModal({ 
+      open: true, 
+      symbolId: symbol.id, 
+      symbolName: symbol.symbol 
+    });
+  };
+
   // Manual HMA refresh handler
   const handleManualHMARefresh = async () => {
     if (isRefreshingHMA || monitoredSymbols.length === 0) return;
@@ -1359,6 +1369,7 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                             >
                               Stop Monitoring
                             </button>
+
                           </div>
                         </td>
                       </tr>
@@ -1479,6 +1490,15 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                                   Place Limit Order
                                 </button>
                               )}
+                              {(item.orderModificationCount > 0 || item.triggerStatus === 'ORDER_MODIFIED') && (
+                                <button
+                                  onClick={() => handleViewOrderModifications(item)}
+                                  className="px-1.5 py-0.5 bg-orange-900/30 hover:bg-orange-800/40 text-orange-400 text-xs font-medium rounded-md"
+                                  title={`View order modifications for ${item.symbol}`}
+                                >
+                                  <History className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -1573,13 +1593,24 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-center">
-                        <button
-                          onClick={() => handleCancelPendingOrder(order)}
-                          className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
-                          title={`Cancel pending order ${order.symbol}`}
-                        >
-                          Cancel
-                        </button>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => handleCancelPendingOrder(order)}
+                            className="px-2 py-1 bg-red-900/30 hover:bg-red-800/40 text-red-400 text-xs font-medium rounded-md"
+                            title={`Cancel pending order ${order.symbol}`}
+                          >
+                            Cancel
+                          </button>
+                          {(order.orderModificationCount > 0 || order.triggerStatus === 'ORDER_MODIFIED') && (
+                            <button
+                              onClick={() => handleViewOrderModifications(order)}
+                              className="px-2 py-1 bg-orange-900/30 hover:bg-orange-800/40 text-orange-400 text-xs font-medium rounded-md"
+                              title={`View order modifications for ${order.symbol}`}
+                            >
+                              <History className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1888,6 +1919,14 @@ const MonitoringDashboard = ({ onTradeLog, refreshTrigger }) => {
           </div>
         </div>
       )}
+
+      {/* Order Modifications Modal */}
+      <OrderModificationsModal
+        isOpen={orderModificationsModal.open}
+        onClose={() => setOrderModificationsModal({ open: false, symbolId: null, symbolName: null })}
+        symbolId={orderModificationsModal.symbolId}
+        symbolName={orderModificationsModal.symbolName}
+      />
     </div>
   );
 };
